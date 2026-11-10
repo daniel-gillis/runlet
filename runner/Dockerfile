@@ -7,10 +7,13 @@
 # runner starts work. See ../patches/ and ../docs/measurements.md.
 
 ARG UPSTREAM=310a370bf3605f5b092f8af63b3126627de2a210
+# dev.sh only builds for the host platform, so this must match the build platform.
+ARG TARGET_RUNTIME=linux-x64
 
 # ── build the agent ──────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG UPSTREAM
+ARG TARGET_RUNTIME
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates unzip \
  && rm -rf /var/lib/apt/lists/*
@@ -21,7 +24,7 @@ COPY patches/ /src/patches/
 # A failing apply is a hard stop: never ship an unpatched image that claims to be
 # patched.
 RUN cd /src/repo && git apply --verbose /src/patches/runlet-fast-path.patch
-RUN cd /src/repo/src && ./dev.sh layout Release linux-x64
+RUN cd /src/repo/src && ./dev.sh layout Release "$TARGET_RUNTIME"
 
 # ── runtime ──────────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
@@ -41,11 +44,12 @@ RUN apt-get update \
       libicu72 \
  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /src/repo/_layout /runner
-
 RUN useradd --create-home --shell /bin/bash runner \
- && mkdir -p /home/runner/_work \
- && chown -R runner:runner /runner /home/runner
+ && mkdir -p /home/runner/_work
+
+# --chown, not `chown -R` after the copy: a recursive chown rewrites every file
+# into a new layer and duplicated the whole agent tree (302 MB measured).
+COPY --from=build --chown=runner:runner /src/repo/_layout /runner
 
 USER runner
 WORKDIR /runner
