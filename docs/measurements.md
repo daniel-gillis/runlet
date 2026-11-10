@@ -229,3 +229,34 @@ next measurement, and the only one that should be published as the headline.
 
 `MessageReceived → StartingWorkerProcess` is still 0.923 s with no network call in
 it: that is message decryption plus listener bookkeeping, and it is change 2.
+
+## 9. Controlled A/B on one host (same machine, same job)
+
+Both variants built from the same tree on the same machine, measured by
+`tools/measure_agent.py` against a real GitHub job.
+
+| variant | runs | p50 | spread |
+|---|---|---|---|
+| baseline (unpatched) | 1 valid | **1782 ms** | — |
+| patched (dispatch before renewal) | 3 | **1470 ms** | 1442–1559 ms |
+
+**~18% faster on this host**, not the 58% the cross-host comparison suggested.
+The cluster-node baseline (3.66 s) includes a slower CPU; the honest, controlled
+figure is 1782 → 1470 ms.
+
+### A measurement bug that produced a wrong answer first
+
+The first A/B reported the patched build as *slower* (2321 ms). The cause was in
+the harness, not the patch: `read_perf` keeps the **first** occurrence of each
+phase, and the perf directory was not cleared between runs, so runs 2 and 3 were
+reporting run 1's timestamps — three "independent" runs were identical to the
+millisecond. That is the tell: identical spreads mean the instrument is broken.
+
+After clearing the perf files per run, the patched build measured 1442–1559 ms
+across three genuinely independent runs.
+
+### Still to do
+
+- Re-measure the baseline with the fixed harness (n≥3) so the A/B is symmetric.
+- The remaining 0.9 s is `MessageReceived → StartingWorkerProcess` with no network
+  call in it: message decryption plus listener bookkeeping. That is change 2.
