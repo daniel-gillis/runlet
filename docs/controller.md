@@ -109,3 +109,68 @@ WantedBy=multi-user.target
   queue latency, so the controller cannot pre-emptively warm capacity.
 - **No per-profile images yet.** `--serve` accepts labels, but every runner uses
   one image. Multiple toolchain profiles would mean a label-to-image map.
+
+## Working around the four limits
+
+Each limit in the section above now has a working answer.
+
+### 1. One repository per process → `--repo` is repeatable
+
+```console
+$ python3 controller/runletd.py --repo owner/a --repo owner/b --serve runlet-runner ...
+```
+
+One process, one token, one loop over multiple repositories.
+
+### 2. Polling latency → `--webhook-port`
+
+Polling bounds dispatch latency to the poll interval. With a webhook the loop
+wakes the moment GitHub reports a `workflow_job` that is `queued`:
+
+```console
+$ export RUNLETD_WEBHOOK_SECRET=...        # same secret as the GitHub webhook
+$ python3 controller/runletd.py --webhook-port 8787 ...
+```
+
+Signatures are verified with HMAC-SHA256 (`X-Hub-Signature-256`); unverified
+requests get a 401 and are ignored. The poll interval stays as a safety net — a
+webhook is an optimisation, not a dependency.
+
+### 3. No pre-warming → `--min-warm`
+
+**Verified:** a JIT runner idles happily after registering ("Listening for Jobs"),
+so a warm pool removes container startup and config minting from the dispatch
+path entirely.
+
+```console
+$ ... --min-warm 2 --max 8
+```
+
+Measured on the homelab: with two warm runners listening, a dispatched job reached
+`in_progress` in **5 s** — and most of that is GitHub's own queue, since the runner
+was already waiting. The pool then refilled to 2 on the next pass after the job
+consumed one.
+
+The trade is explicit: idle runners cost memory while idle. `--min-warm 0` keeps
+the original scale-from-zero behaviour.
+
+### 4. One image for all labels → `--serve label=image`
+
+```console
+$ python3 controller/runletd.py \
+    --serve runlet-runner \
+    --serve runlet-py=ghcr.io/you/runlet-runner:py \
+    --serve runlet-docker=ghcr.io/you/runlet-runner:docker
+```
+
+Each label gets its own image and its own pool, with independent `--max`. A job
+requesting `runs-on: [runlet-py]` can only be served by a runner minted with that
+label, so the mapping is unambiguous.
+
+## What is still not solved
+
+- **~700 ms job fetch** on the critical path inside the agent. Not a controller
+  problem; it needs change 3 in the runner (start the worker before the fetch).
+- **~3 s queue time at GitHub.** Not addressable at all.
+- **No queue-depth signal.** GitHub exposes queued runs, not queue latency, so the
+  controller cannot pre-emptively grow beyond `min-warm` before work is visible.
