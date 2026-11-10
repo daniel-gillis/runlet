@@ -13,8 +13,14 @@
 </p>
 
 > **Status: design phase.** There is no implementation yet. This repository holds
-> a protocol specification, a compatibility study, and the measurements that will
+> a protocol specification, a compatibility study, and the measurements that
 > decide whether the idea is worth building. Nothing here is production software.
+>
+> **Measured, 2026-11-10:** with two idle self-hosted runners, GitHub took
+> **3–46 s** to assign a queued job, and the agent spent **3–4 s** executing a
+> trivial one. That puts a hard external floor under any end-to-end claim — see
+> [`docs/measurements.md`](docs/measurements.md). runlet's own target is therefore
+> *assigned → first step in under a second*, not "push to running in 2 s".
 
 ---
 
@@ -36,7 +42,7 @@ The 30–60 s is not one problem, it is six, and most of them are avoidable:
 
 | Stage | Typical | Target | How |
 |---|---|---|---|
-| queued → noticed | 2–30 s | 0.05–0.5 s | webhook, not polling |
+| queued → noticed | 2–30 s | *GitHub's, measured 3–46 s* | not ours to optimise |
 | image materialised | 5–60 s | 0.1–0.4 s | lazy-pull / snapshot, never a full pull |
 | container start | 0.1–0.3 s | 0.05–0.15 s | minimal rootfs or microVM restore |
 | registration | 0.3–1.0 s | **0 s** | JIT configs pre-minted in bulk |
