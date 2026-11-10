@@ -1,0 +1,22 @@
+[package]
+name = "runlet-agent"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "A minimal, fast GitHub Actions agent"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
