@@ -190,3 +190,42 @@ the critical path.
 
 **This is change 1**, and it alone targets 2.4 s of the 3.7 s — an order of
 magnitude more than the 500–700 ms the earlier plan was chasing.
+
+## 8. Change 1 applied: dispatch no longer waits for the lock renewal
+
+Patch: `JobDispatcher.Run` starts `Runner.Worker` immediately and only afterwards
+awaits `firstJobRequestRenewed`. A failed renewal kills the worker before any step
+is reported, so the invariant is preserved.
+
+Measured with the same perf counters, one real job on the patched build:
+
+| phase | delta | cumulative |
+|---|---|---|
+| StartingWorkerProcess | 0.923 s | 0.923 s |
+| SentJobToWorker | 0.038 s | 0.961 s |
+| **JobRequestRenewed** | 0.127 s | **1.088 s** ← now *after* dispatch |
+| WorkerProcessStarted | 0.070 s | 1.158 s |
+| WorkerJobMsgReceived | 0.043 s | 1.201 s |
+| QueueStarted | 0.055 s | 1.256 s |
+| JobInitialized | 0.094 s | 1.349 s |
+| FirstConsoleOutput | 0.202 s | **1.551 s** |
+
+**Total: 1.551 s, against 3.66 s unpatched — a 58% reduction.**
+
+### Caveat, stated plainly
+
+The unpatched baseline was measured on a cluster node; the patched run was on an
+Apple-silicon machine, which is faster. So 3.66 → 1.55 s is *not* a controlled
+comparison.
+
+What **is** controlled is the structure: `JobRequestRenewed` moved from 2.421 s
+*before* dispatch to 1.088 s *after* it. The gate that cost 2.42 s is gone, and
+that is hardware-independent.
+
+The controlled A/B — unpatched and patched on the same host, same job — is the
+next measurement, and the only one that should be published as the headline.
+
+### What the remaining 0.92 s is
+
+`MessageReceived → StartingWorkerProcess` is still 0.923 s with no network call in
+it: that is message decryption plus listener bookkeeping, and it is change 2.
