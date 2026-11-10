@@ -16,11 +16,24 @@ fn main() -> ExitCode {
             Some(raw) => match jit::decode(&raw) {
                 Ok(config) => {
                     println!(
-                        "runlet-agent {} pool={} agent={} server={}",
+                        "runlet-agent {} pool={} agent={} name={} ephemeral={} endpoint={}",
                         env!("CARGO_PKG_VERSION"),
-                        config.pool_id,
-                        config.agent_id,
-                        config.server_url
+                        config.runner.pool_id,
+                        config.runner.agent_id,
+                        config.runner.agent_name,
+                        config.runner.ephemeral,
+                        config.endpoint()
+                    );
+                    // Surfaced without values: the agent needs both the bearer
+                    // credential and the RSA key to read an encrypted job message.
+                    // Base64 length -> bytes, so the modulus size is reported
+                    // honestly rather than as a guess at bit strength.
+                    let modulus_bytes = config.rsa.modulus.len() * 3 / 4;
+                    println!(
+                        "  auth={} client={} rsa_modulus={} bytes",
+                        config.credentials.scheme,
+                        config.credentials.data.client_id.len(),
+                        modulus_bytes
                     );
                     ExitCode::SUCCESS
                 }

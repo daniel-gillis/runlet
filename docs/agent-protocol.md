@@ -22,16 +22,50 @@ design freedom is entirely in *how fast we do it*, not in what we say.
 7. Acknowledge / delete  ↳ remove the message, renew or exit
 ```
 
-### 1. JIT configuration
+### 1. JIT configuration — VERIFIED against a live config
 
-The runner is started with `--jitconfig <base64>`. Decoding yields a JSON document
-carrying at least the agent identity, pool id, server URL and work folder. The
-credential inside is **single-use**: a runner started from a JIT config can serve
-exactly one job, which is precisely the ephemeral semantics runlet wants.
+`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig` returns
+`encoded_jit_config`, which is **double-base64**:
 
-**Unverified:** the exact field names and whether the token is a bearer token or
-an OAuth client credential in the JIT document. Confirm against
-`src/Runner.Listener/Configuration/ConfigurationManager.cs` before implementing.
+```
+base64(                                        <- the --jitconfig argument
+  { ".runner":                base64(json),
+    ".credentials":           base64(json),
+    ".credentials_rsaparams": base64(json) })
+```
+
+`.runner` (real field names and types):
+
+```json
+{"AgentId":"168","AgentName":"runlet-probe","DisableUpdate":"True",
+ "Ephemeral":"True","PoolId":"1","PoolName":null,
+ "ServerUrl":"https://pipelines.actions.githubusercontent.com/…",
+ "WorkFolder":"_work","GitHubUrl":"https://github.com/…",
+ "ServerUrlV2":"https://broker.actions.githubusercontent.com/…",
+ "UseV2Flow":"True"}
+```
+
+Three traps, all of which cost a build to discover:
+
+- **Ids are strings** (`"AgentId":"168"`), not numbers.
+- **Booleans are capitalised strings** (`"True"`) — the document stringifies
+  everything, so `serde` needs lenient handling for both.
+- **`Ephemeral` is `true` by construction**: a JIT runner serves exactly one job.
+  That is the semantics runlet wants, and it is not configurable.
+
+`.credentials` is an **OAuth client**, not a bearer token:
+
+```json
+{"Scheme":"OAuth","Data":{"ClientId":"<36 chars>","AuthorizationUrl":"<url>"}}
+```
+
+So the agent must exchange `ClientId` + `AuthorizationUrl` for an access token
+before it can talk to the queue. **Unverified:** the grant type and whether the
+request is form-encoded client-credentials.
+
+`.credentials_rsaparams` is a 2048-bit RSA private key (`modulus`, `exponent`,
+`d`, `p`, `q`, `dp`, `dq`, `inverseQ`). It is what the server encrypts job
+messages *to*, so an agent that ignores it can connect and never read a job.
 
 ### 2. Create session
 
@@ -52,8 +86,12 @@ runner — the server decides whether to hand over work based on that payload.
 
 ### 4. Decryption
 
-`DecryptMessage` uses the session's `EncryptionKey`. **Unverified:** the cipher and
-the framing of the IV (separate field vs prefixed to the body).
+`DecryptMessage` uses the session's `EncryptionKey`, and the RSA private key from
+the JIT document is what makes that key readable. **Still unverified:** the hybrid
+scheme (expected: RSA-OAEP unwrapping a symmetric key, then AES-CBC with an IV
+carried in the message) and the field names on the wire. This is the next thing to
+read from `RunnerService.cs`/`TaskAgentSession`, because guessing a cipher framing
+produces an implementation that looks correct and silently fails.
 
 ### 5–6. Execution and reporting
 
@@ -69,6 +107,18 @@ step starts. This is the single biggest opportunity: if log/timeline setup can r
 timeout, and `DeleteAgentMessageAsync` to remove it. Acknowledge is what tells
 GitHub the job has been taken; it should fire as soon as the job is accepted, not
 after it completes.
+
+## Status
+
+Implemented and tested against a live config (8 unit tests):
+
+- JIT decoding, including the double-base64 envelope, string ids, string booleans
+  and the OAuth client structure.
+- Endpoint selection that honours `UseV2Flow` — live value resolves to
+  `https://broker.actions.githubusercontent.com/`.
+
+Not yet implemented: token exchange, session creation, message poll, decryption,
+job execution, reporting.
 
 ## Where the 903 ms probably goes
 
