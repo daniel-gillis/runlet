@@ -25,12 +25,32 @@ Two things are immediately clear:
    46 s observed back-to-back. It is GitHub's scheduling, not runner capacity:
    both runners were idle throughout.
 
+### 1a. The confounder, and the fix
+
+The first batch was measured against **single-use runners**. The image's
+entrypoint tests `[ -n "${EPHEMERAL}" ]`, so `EPHEMERAL=false` — a non-empty
+string — passes `--ephemeral`, and every runner deregistered and exited after one
+job. Each job then waited for a pod restart plus re-registration.
+
+After removing the variable (and `UNSET_CONFIG_VARS`), the same bench on the same
+cluster:
+
+| | before | after |
+|---|---|---|
+| queue p50 | 3 s | **3 s** |
+| queue p95 | 26 s | **4 s** |
+| queue max | 46 s | **4 s** |
+| exec (trivial job) | 3–4 s | **3–4 s** |
+
+The tail was ours. **The floor was not.**
+
 ## 2. What this means for the <2 s target
 
 **It is not reachable while GitHub schedules the jobs.**
 
-The floor is `github_schedule + assignment`, which measured between **3 s and
-46 s** with nothing queued ahead. Our materialisation work — the part we can
+With the runner bug fixed, the floor is stable: **~3 s to assign a job that is
+already queued, plus ~3 s for the agent to execute even a two-line job.** Both
+are second-granularity API timestamps, so read them as 2–4 s each. Our materialisation work — the part we can
 actually engineer — sits *after* the job has been assigned. Even at zero cost for
 materialisation and execution, end-to-end cannot go below GitHub's assignment
 time.
