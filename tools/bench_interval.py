@@ -35,14 +35,29 @@ def sh(*args: str) -> str:
     return result.stdout
 
 
-def runner_pod(namespace: str) -> str:
-    out = sh("kubectl", "-n", namespace, "get", "pods",
-             "-l", "app.kubernetes.io/name=github-runner",
-             "--no-headers", "-o", "custom-columns=:metadata.name")
-    pods = [p for p in out.split() if p]
-    if not pods:
-        raise SystemExit("no runner pods found")
-    return pods[0]
+# Match a real pod name, not the echoed command line "runner_host=$(hostname)".
+HOST_RE = re.compile(r"runner_host=(github-runner-[a-z0-9-]+)")
+
+
+def runner_pod(namespace: str, repo: str, run_id: int) -> str:
+    """The pod that actually served this run.
+
+    Picking the first pod is wrong: there are two runners, and reading the other
+    one's log yields a stale 'Running job' line — which is what produced deltas of
+    hundreds of seconds. The workflow prints its hostname, so ask it.
+    """
+    logs = sh("gh", "run", "view", str(run_id), "--repo", repo, "--log")
+    matches = HOST_RE.findall(logs)
+    match = matches[-1] if matches else None
+    if not match:
+        raise SystemExit(f"run {run_id}: no runner_host in the job log")
+    pod = match
+    available = sh("kubectl", "-n", namespace, "get", "pods",
+                   "-l", "app.kubernetes.io/name=github-runner",
+                   "--no-headers", "-o", "custom-columns=:metadata.name").split()
+    if pod not in available:
+        raise SystemExit(f"run {run_id}: host {pod} is not a current runner pod ({available})")
+    return pod
 
 
 def parse_ts(value: str) -> float:
@@ -76,25 +91,29 @@ def wait_done(repo: str, run_id: int, timeout: float = 240) -> None:
 
 def step_epoch(repo: str, run_id: int) -> float:
     logs = sh("gh", "run", "view", str(run_id), "--repo", repo, "--log")
-    for line in logs.splitlines():
-        m = EPOCH_RE.search(line)
-        if m:
-            return float(m.group(1))
-    raise SystemExit(f"no RUNLET_STEP_EPOCH in run {run_id}")
+    stamps = [float(m.group(1)) for m in (EPOCH_RE.search(l) for l in logs.splitlines()) if m]
+    if not stamps:
+        raise SystemExit(f"no RUNLET_STEP_EPOCH in run {run_id}")
+    return stamps[-1]
 
 
-def agent_assign_epoch(namespace: str, pod: str) -> float:
-    """Timestamp of the most recent 'Running job' line in the runner log."""
+def agent_assign_epoch(namespace: str, pod: str, t_step: float) -> float:
+    """The 'Running job' line belonging to this run.
+
+    Chosen by proximity to the step stamp (within 120s), not by "the last line",
+    so a stale entry from an earlier job on a long-lived pod cannot be paired.
+    """
     logs = sh("kubectl", "-n", namespace, "logs", pod, "--timestamps",
-              "--since=15m", "--tail=400")
-    found = None
+              "--since=30m", "--tail=800")
+    candidates = []
     for line in logs.splitlines():
         m = LOG_TS_RE.match(line)
         if m:
-            found = parse_ts(m.group(1))
-    if found is None:
-        raise SystemExit("no 'Running job' line in the runner log")
-    return found
+            candidates.append(parse_ts(m.group(1)))
+    close = [c for c in candidates if 0 <= t_step - c <= 120]
+    if not close:
+        raise SystemExit(f"no 'Running job' line within 120s of the step on {pod}")
+    return max(close)
 
 
 def pct(values: list[float], q: float) -> float:
@@ -111,8 +130,7 @@ def main(argv) -> int:
     ap.add_argument("--json-out", default="")
     args = ap.parse_args(argv)
 
-    pod = runner_pod(args.namespace)
-    print(f"runner pod: {pod}")
+    print("resolving runner pod per run (two runners, job may land on either)")
     deltas: list[float] = []
     rows = []
     for _ in range(args.runs):
@@ -128,11 +146,12 @@ def main(argv) -> int:
         wait_done(args.repo, run_id)
         # Give the agent a moment to flush its log line.
         time.sleep(1)
+        pod = runner_pod(args.namespace, args.repo, run_id)
         t_step = step_epoch(args.repo, run_id)
-        t_assign = agent_assign_epoch(args.namespace, pod)
+        t_assign = agent_assign_epoch(args.namespace, pod, t_step)
         delta_ms = (t_step - t_assign) * 1000
         # A negative or enormous delta means we paired the wrong log line.
-        if -500 < delta_ms < 60_000:
+        if 0 <= delta_ms < 5_000:
             deltas.append(delta_ms)
             rows.append({"run_id": run_id, "assign_to_step_ms": round(delta_ms, 1)})
             print(f"run {run_id}: assign→first-step = {delta_ms:7.1f} ms", flush=True)

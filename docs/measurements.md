@@ -99,15 +99,29 @@ Target interval: **job assigned to a runner → first step executing.** Measured
 
 | Run | assign → first step |
 |---|---|
-| 1 | 835 ms |
-| 2 | 873 ms |
-| 3 | 868 ms |
-| 4 | 858 ms |
-| **p50** | **868 ms** |
+| 1 | 950 ms |
+| 2 | 904 ms |
+| 3 | 922 ms |
+| 4 | 866 ms |
+| 5 | 912 ms |
+| 6 | 886 ms |
+| **p50** | **903 ms** |
 
-(Two runs in the sample reported ~14 s; those are a log-line pairing artifact in
-the harness — the API reports the whole job as 3–4 s — and are excluded pending a
-fix that scopes the log window per run.)
+Range 866–950 ms, n=6, **zero discarded samples**. An earlier run of this
+measurement reported a 868 ms median but contained outliers of 14 s and 324 s;
+those were harness bugs, both since fixed:
+
+1. It read the log of `pods[0]`, but with two runners a job can land on either,
+   so it paired the step stamp with a *different pod's* stale `Running job` line.
+   It now asks the job which host ran it (`runner_host` is printed by the workflow)
+   and reads only that pod.
+2. Its hostname regex matched the *echoed command* (`runner_host=$(hostname)`)
+   rather than the command's output. It now requires a real pod name, and takes
+   the last match for the step stamp.
+
+The lesson recorded here for anyone building on this harness: **when a measurement
+shows 300-second outliers, suspect the measurement.** The instrument needed as
+much debugging as the system under test.
 
 So the stock agent takes **~870 ms** from receiving a job to having the first step
 executing, on a warm runner with a local image. That is the number runlet has to
