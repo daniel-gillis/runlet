@@ -142,3 +142,51 @@ assignment latency. Corrected, the picture is:
 The honest product claim is therefore: *"~0.3 s instead of ~0.9 s of runner
 overhead, on top of whatever GitHub's queue costs."* Still worth building, and
 still measurable — but it is a 3× improvement in our slice, not 20×.
+
+## 7. Phase decomposition from the agent's own perf counters
+
+`RUNNER_PERFLOG=/tmp/perf` makes the agent write `{Runner,Worker}.perf` with
+ISO-8601 timestamps at each stage. This is far better than correlating logs: the
+agent timestamps its own phases. One real job:
+
+| Phase | Timestamp | Δ |
+|---|---|---|
+| `MessageReceived_RunnerJobRequest` | 12:43:16.2766 | — |
+| `JobRequestRenewed_0` | 12:43:18.6977 | **+2.421 s** |
+| `StartingWorkerProcess` | 12:43:18.7000 | +0.002 s |
+| `SentJobToWorker_0` | 12:43:18.7398 | +0.029 s |
+| `WorkerProcessStarted` | 12:43:18.9288 | +0.189 s |
+| `WorkerJobMessageReceived_0` | 12:43:19.0538 | +0.111 s |
+| `WorkerJobServerQueueStarted_0` | 12:43:19.2104 | +0.157 s |
+| `WorkerJobInitialized_0` | 12:43:19.3741 | +0.164 s |
+| first console output | 12:43:19.9355 | +0.561 s |
+| **total** | | **3.66 s** |
+
+### The 903 ms measurement was measuring the wrong interval
+
+The earlier 903 ms was anchored on the `Running job:` log line, which the agent
+prints *after* the renewal above. So 903 ms is "after the agent decided to run
+it", not "job assigned". The true assign-to-first-step is **3.66 s**, and the
+single largest term is a **2.42 s gap between receiving the job message and the
+first lock renewal completing**.
+
+### Why the gap exists, and that it is fixable
+
+`JobDispatcher.Run`:
+
+```csharp
+Task renewJobRequest = RenewJobRequestAsync(...);
+// "not even start worker if the first renew fail"
+await Task.WhenAny(firstJobRequestRenewed.Task, renewJobRequest, ...);
+```
+
+The first lock renewal is an HTTP round trip to GitHub, and dispatch waits for it.
+The worker process is not started until the lock is confirmed.
+
+The worker does not need the lock to *begin*. Dispatching first and enforcing the
+renewal immediately afterwards preserves the invariant (a failed renewal still
+kills the worker before any step is reported) while removing the round trip from
+the critical path.
+
+**This is change 1**, and it alone targets 2.4 s of the 3.7 s — an order of
+magnitude more than the 500–700 ms the earlier plan was chasing.
