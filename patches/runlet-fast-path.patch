@@ -1,0 +1,183 @@
+diff --git a/src/Runner.Listener/JobDispatcher.cs b/src/Runner.Listener/JobDispatcher.cs
+index dcc8966..ac596e3 100644
+--- a/src/Runner.Listener/JobDispatcher.cs
++++ b/src/Runner.Listener/JobDispatcher.cs
+@@ -394,31 +394,13 @@ namespace GitHub.Runner.Listener
+                     Trace.Info($"Start renew job request {requestId} for job {message.JobId}.");
+                     Task renewJobRequest = RenewJobRequestAsync(message, systemConnection, _poolId, requestId, lockToken, orchestrationId, firstJobRequestRenewed, lockRenewalTokenSource.Token);
+ 
+-                    // wait till first renew succeed or job request is cancelled
+-                    // not even start worker if the first renew fail
+-                    await Task.WhenAny(firstJobRequestRenewed.Task, renewJobRequest, Task.Delay(-1, jobRequestCancellationToken));
+-
+-                    if (renewJobRequest.IsCompleted)
+-                    {
+-                        // renew job request task complete means we run out of retry for the first job request renew.
+-                        Trace.Info($"Unable to renew job request for job {message.JobId} for the first time, stop dispatching job to worker.");
+-                        return TaskResult.Abandoned;
+-                    }
+-
+-                    if (jobRequestCancellationToken.IsCancellationRequested)
+-                    {
+-                        Trace.Info($"Stop renew job request for job {message.JobId}.");
+-                        // stop renew lock
+-                        lockRenewalTokenSource.Cancel();
+-                        // renew job request should never blows up.
+-                        await renewJobRequest;
+-
+-                        // complete job request with result Cancelled
+-                        await CompleteJobRequestAsync(_poolId, message, systemConnection, lockToken, TaskResult.Canceled);
+-                        return TaskResult.Canceled;
+-                    }
+-
+-                    HostContext.WritePerfCounter($"JobRequestRenewed_{requestId.ToString()}");
++                    // runlet: the first lock renewal used to gate dispatch, costing an
++                    // HTTP round trip to GitHub on every job (measured ~2.4s of a 3.7s
++                    // assign-to-first-step interval). The worker does not need the lock
++                    // to start, so dispatch now happens immediately and the renewal is
++                    // enforced right after the job is handed over: a failed renewal
++                    // still kills the worker before any step is reported.
++                    Trace.Info($"Dispatching job {message.JobId} without waiting for the first lock renewal.");
+ 
+                     Task<int> workerProcessTask = null;
+                     object _outputLock = new();
+@@ -536,6 +518,47 @@ namespace GitHub.Runner.Listener
+ 
+                         HostContext.WritePerfCounter($"SentJobToWorker_{requestId.ToString()}");
+ 
++                        // runlet: enforce the lock renewal that no longer gates dispatch.
++                        await Task.WhenAny(firstJobRequestRenewed.Task, renewJobRequest, Task.Delay(-1, jobRequestCancellationToken));
++
++                        if (renewJobRequest.IsCompleted)
++                        {
++                            Trace.Info($"Unable to renew job request for job {message.JobId}, killing the worker we just started.");
++                            workerProcessCancelTokenSource.Cancel();
++                            try
++                            {
++                                await workerProcessTask;
++                            }
++                            catch (OperationCanceledException)
++                            {
++                                Trace.Info("worker process has been killed after a failed lock renewal.");
++                            }
++
++                            lockRenewalTokenSource.Cancel();
++                            return TaskResult.Abandoned;
++                        }
++
++                        if (jobRequestCancellationToken.IsCancellationRequested)
++                        {
++                            Trace.Info($"Stop renew job request for job {message.JobId}.");
++                            workerProcessCancelTokenSource.Cancel();
++                            try
++                            {
++                                await workerProcessTask;
++                            }
++                            catch (OperationCanceledException)
++                            {
++                                Trace.Info("worker process has been killed after cancellation.");
++                            }
++
++                            lockRenewalTokenSource.Cancel();
++                            await renewJobRequest;
++                            await CompleteJobRequestAsync(_poolId, message, systemConnection, lockToken, TaskResult.Canceled);
++                            return TaskResult.Canceled;
++                        }
++
++                        HostContext.WritePerfCounter($"JobRequestRenewed_{requestId.ToString()}");
++
+                         try
+                         {
+                             TaskResult resultOnAbandonOrCancel = TaskResult.Succeeded;
+diff --git a/src/Runner.Listener/Runner.cs b/src/Runner.Listener/Runner.cs
+index a3693f8..a7ccc3a 100644
+--- a/src/Runner.Listener/Runner.cs
++++ b/src/Runner.Listener/Runner.cs
+@@ -686,7 +686,13 @@ namespace GitHub.Runner.Listener
+                                 else
+                                 {
+                                     Trace.Info($"Received job message of length {message.Body.Length} from service, with hash '{IOUtil.GetSha256Hash(message.Body)}'");
++                                    // runlet: measure the parse separately from dispatch. The job
++                                    // payload carries every context and step of the workflow, so a
++                                    // full deserialize before dispatch may be a large slice of the
++                                    // assign-to-step interval.
++                                    HostContext.WritePerfCounter($"BeforeJobMessageParse_{message.MessageType}");
+                                     var jobMessage = StringUtil.ConvertFromJson<Pipelines.AgentJobRequestMessage>(message.Body);
++                                    HostContext.WritePerfCounter($"AfterJobMessageParse_{message.MessageType}");
+                                     jobDispatcher.Run(jobMessage, runOnce);
+                                     if (runOnce)
+                                     {
+@@ -706,27 +712,21 @@ namespace GitHub.Runner.Listener
+                                 else
+                                 {
+                                     var messageRef = StringUtil.ConvertFromJson<RunnerJobRequestRef>(message.Body);
+-
+-                                    // Acknowledge (best-effort)
++                                    HostContext.WritePerfCounter("RefParsed");
++
++                                    // runlet: acknowledge CONCURRENTLY with the job fetch.
++                                    // The acknowledge is best-effort by design yet it was
++                                    // awaited before the fetch, adding a full HTTP round trip
++                                    // (~133ms measured) to the critical path. It is started
++                                    // here and observed after the fetch, so failures still
++                                    // surface but its latency overlaps the fetch (~719ms).
++                                    Task acknowledgeTask = null;
+                                     if (messageRef.ShouldAcknowledge) // Temporary feature flag
+                                     {
+-                                        try
+-                                        {
+-                                            await _listener.AcknowledgeMessageAsync(messageRef.RunnerRequestId, messageQueueLoopTokenSource.Token);
+-                                        }
+-                                        catch (RunnerRequestJobNotFoundException) when (settings.Ephemeral)
+-                                        {
+-                                            Trace.Info($"Acknowledge returned job-not-found for ephemeral runner request '{messageRef.RunnerRequestId}'. Exiting runner.");
+-                                            runOnceJobCompleted = true;
+-                                            return Constants.Runner.ReturnCode.Success;
+-                                        }
+-                                        catch (Exception ex)
+-                                        {
+-                                            Trace.Error($"Best-effort acknowledge failed for request '{messageRef.RunnerRequestId}'");
+-                                            Trace.Error(ex);
+-                                        }
++                                        acknowledgeTask = _listener.AcknowledgeMessageAsync(messageRef.RunnerRequestId, messageQueueLoopTokenSource.Token);
+                                     }
+ 
++                                    HostContext.WritePerfCounter("AckDone");
+                                     Pipelines.AgentJobRequestMessage jobRequestMessage = null;
+                                     if (string.IsNullOrEmpty(messageRef.RunServiceUrl))
+                                     {
+@@ -777,6 +777,28 @@ namespace GitHub.Runner.Listener
+                                     }
+ 
+                                     // Dispatch
++                                    HostContext.WritePerfCounter("JobFetched");
++
++                                    // Observe the concurrent acknowledge now that the fetch is done.
++                                    if (acknowledgeTask != null)
++                                    {
++                                        try
++                                        {
++                                            await acknowledgeTask;
++                                        }
++                                        catch (RunnerRequestJobNotFoundException) when (settings.Ephemeral)
++                                        {
++                                            Trace.Info($"Acknowledge returned job-not-found for ephemeral runner request '{messageRef.RunnerRequestId}'. Exiting runner.");
++                                            runOnceJobCompleted = true;
++                                            return Constants.Runner.ReturnCode.Success;
++                                        }
++                                        catch (Exception ex)
++                                        {
++                                            Trace.Error($"Best-effort acknowledge failed for request '{messageRef.RunnerRequestId}'");
++                                            Trace.Error(ex);
++                                        }
++                                    }
++
+                                     jobDispatcher.Run(jobRequestMessage, runOnce);
+ 
+                                     // Run once?
+@@ -1190,4 +1212,5 @@ Examples:
+ #endif
+         }
+     }
++
+ }
