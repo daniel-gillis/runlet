@@ -89,3 +89,42 @@ is experienced, with honesty about what is left.**
   scheduler, i.e. building a CI system rather than a runner. That is a different
   project with a much larger scope, and it should be a deliberate decision rather
   than an accident of ambition.
+
+## 5. The interval runlet actually owns
+
+Target interval: **job assigned to a runner → first step executing.** Measured with
+`tools/bench_interval.py`, which correlates two timestamps from the same pod clock
+(containerd's nanosecond log timestamp for the agent's `Running job:` line, and
+`RUNLET_STEP_EPOCH` printed inside the step).
+
+| Run | assign → first step |
+|---|---|
+| 1 | 835 ms |
+| 2 | 873 ms |
+| 3 | 868 ms |
+| 4 | 858 ms |
+| **p50** | **868 ms** |
+
+(Two runs in the sample reported ~14 s; those are a log-line pairing artifact in
+the harness — the API reports the whole job as 3–4 s — and are excluded pending a
+fix that scopes the log window per run.)
+
+So the stock agent takes **~870 ms** from receiving a job to having the first step
+executing, on a warm runner with a local image. That is the number runlet has to
+beat, and the target of 200–400 ms implies removing **450–650 ms** of agent
+overhead — not the 3 s the coarser API measurements suggested.
+
+## 6. Why this matters for the claim
+
+The earlier "3 s" figure was API quantisation plus whole-job teardown, not
+assignment latency. Corrected, the picture is:
+
+| Interval | Time | Owner |
+|---|---|---|
+| run created → job assigned | ~3 s | **GitHub** |
+| assigned → first step | **~0.87 s** | **us** |
+| first step → job complete (trivial) | ~1.5–2 s | agent |
+
+The honest product claim is therefore: *"~0.3 s instead of ~0.9 s of runner
+overhead, on top of whatever GitHub's queue costs."* Still worth building, and
+still measurable — but it is a 3× improvement in our slice, not 20×.
