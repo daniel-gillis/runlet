@@ -260,3 +260,23 @@ across three genuinely independent runs.
 - Re-measure the baseline with the fixed harness (n≥3) so the A/B is symmetric.
 - The remaining 0.9 s is `MessageReceived → StartingWorkerProcess` with no network
   call in it: message decryption plus listener bookkeeping. That is change 2.
+
+## 10. Symmetric A/B (both variants re-measured with the fixed harness)
+
+| variant | runs | p50 | spread | max |
+|---|---|---|---|---|
+| baseline (unpatched) | 3 | **1731 ms** | 1529–2460 ms | 2460 ms |
+| patched (dispatch before renewal) | 3 | **1470 ms** | 1442–1559 ms | 1559 ms |
+
+Same host, same job, same harness, both built from source.
+
+**15% off the median, 37% off the maximum.**
+
+The variance reduction is arguably the better result. The lock renewal is a network
+call to GitHub with unpredictable latency, and it sat directly on the critical
+path — so every job inherited GitHub's tail. Moving it off the path removed jitter
+that no amount of local optimisation could have fixed.
+
+Correction to §9: the earlier figures of 1782 ms (baseline, n=1) and the 58%
+cross-host win were both weaker evidence than this. **1731 → 1470 ms is the number
+to publish.**
