@@ -64,6 +64,13 @@ $ gh api -X POST repos/<owner>/<repo>/actions/runners/generate-jitconfig \
 $ docker run --rm -e RUNNER_JIT_CONFIG="$(cat /tmp/jit.txt)" runlet-runner
 ```
 
+For a fleet instead of one job, run the controller:
+
+```console
+$ GITHUB_TOKEN=$(gh auth token) python3 controller/runletd.py \
+    --repo <owner>/<repo> --serve runlet-runner --image runlet-runner --max 8
+```
+
 Then target it from a workflow with `runs-on: [runlet]`.
 
 Full instructions, including how to verify the patch is active on your own runner:
@@ -75,7 +82,9 @@ Full instructions, including how to verify the patch is active on your own runne
 |---|---|
 | [`patches/`](patches/) | the patch series, pinned to an upstream commit |
 | [`runner/`](runner/Dockerfile) | multi-stage image: builds the patched agent, packages a runtime |
+| [`controller/`](controller/runletd.py) | scale-from-zero controller: queued job → mint → container |
 | [`docs/setup.md`](docs/setup.md) | build, mint, run, verify |
+| [`docs/controller.md`](docs/controller.md) | how the controller works and where it stops |
 | [`docs/measurements.md`](docs/measurements.md) | every number, including the wrong ones |
 | [`docs/agent-protocol.md`](docs/agent-protocol.md) | what the runner protocol is, verified from a live config |
 | [`docs/agent-strategy.md`](docs/agent-strategy.md) | why a fork beats a reimplementation |
@@ -86,8 +95,11 @@ Full instructions, including how to verify the patch is active on your own runne
 
 ## Honest limits
 
-- **One job per container.** A JIT-configured runner is single-use by GitHub's
-  design. Running a fleet needs an orchestrator; that is not built yet.
+- **One job per container, by design.** A JIT-configured runner is single-use.
+  Running a fleet is what [`controller/runletd.py`](controller/runletd.py) is for:
+  it watches queued jobs, mints a config per job, starts a container, and lets it
+  exit. Verified scale-from-zero and back to zero —
+  see [`docs/controller.md`](docs/controller.md).
 - **~700 ms of GitHub latency remains** on the critical path. The patch overlaps
   what it can; it cannot remove a fetch.
 - **~3 s of queue time** before the runner hears about a job. Not ours.
