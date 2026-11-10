@@ -280,3 +280,38 @@ that no amount of local optimisation could have fixed.
 Correction to §9: the earlier figures of 1782 ms (baseline, n=1) and the 58%
 cross-host win were both weaker evidence than this. **1731 → 1470 ms is the number
 to publish.**
+
+## 11. The broker flow: two HTTP round trips on the critical path
+
+Instrumenting the V2 path (`RefParsed`, `AckDone`, `JobFetched`) decomposed the
+remaining time:
+
+| phase | before | after change 2 |
+|---|---|---|
+| MessageReceived → RefParsed | 1 ms | 3 ms |
+| RefParsed → **AckDone** | **133 ms** | **7.7 ms** |
+| AckDone → **JobFetched** | **719 ms** | **697 ms** |
+| JobFetched → StartingWorkerProcess | 10 ms | 10 ms |
+| **total** | **1451 ms** | **1262 ms** |
+
+**59% of the interval was two GitHub HTTP calls.** Parsing is free (1 ms) — the
+hypothesis that a large JSON payload was the cost was wrong, and instrumentation
+is what disproved it.
+
+### Change 2: acknowledge concurrently with the fetch
+
+The acknowledge is documented "best-effort" but was awaited *before* the job fetch,
+adding a full round trip to the critical path. It now starts before the fetch and
+is observed after it: failures still surface, and its latency overlaps the fetch.
+
+Evidenced structurally: `RefParsed → AckDone` fell from 133 ms to 7.7 ms, which is
+the ack's own time no longer being waited on.
+
+*n=1 for the after-state; the phase shift is the proof, the total needs n≥3.*
+
+### What is left
+
+`JobFetched` is 697 ms of pure GitHub latency — 55% of the remaining interval. It
+cannot be removed, only overlapped: `Runner.Worker` already waits up to 30 s for a
+job message over the pipe, so the worker could be started *before* the fetch and
+the fetch hidden behind .NET startup (~120–300 ms). That is change 3.

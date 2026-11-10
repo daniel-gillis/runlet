@@ -32,7 +32,9 @@ from pathlib import Path
 
 ORDER = [
     "MessageReceived_RunnerJobRequest",
-    "BeforeJobMessageParse_RunnerJobRequest",
+    "RefParsed",
+    "AckDone",
+    "JobFetched",
     "AfterJobMessageParse_RunnerJobRequest",
     "StartingWorkerProcess",
     "SentJobToWorker_0",
