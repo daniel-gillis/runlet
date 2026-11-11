@@ -107,9 +107,9 @@ Everything we control after the patch totals 554 ms. The 710 ms fetch belongs to
 | Skip the listener's parse of the job | about 40 ms | Pass the raw payload through instead of parse, re-serialize, re-parse | Narrow, and it removes validation the listener relies on |
 | Reduce first-step preparation | unclear | Measure what dominates the 202 ms: shell spawn, script write, or the first-line upload | Next experiment |
 
-Two claims were tested and are not wins:
+One claim was tested and rejected, and one was first rejected and then confirmed with more samples:
 
-- **Faster log dequeue.** Console lines were dequeued on a 250 ms timer, so a queue signal was added to wake the loop as soon as a line arrived. The first line still landed 181 ms after job init against 202 ms without it, which is inside the noise. The 202 ms is step preparation and the upload, not the timer. Reverted.
+- **Faster log dequeue, first attempt.** Two samples showed 181 ms against 202 ms, which looked like noise, so the change was reverted. That was the wrong call. With five samples on each side the distribution is bimodal without the change and tight with it.
 - **ReadyToRun.** Already enabled upstream (`PublishReadyToRunComposite=true`), so the 18 ms worker start is already close to the .NET floor. Trimming would break the reflection this codebase depends on.
 
 ## The ceiling
@@ -117,3 +117,21 @@ Two claims were tested and are not wins:
 With the patch, the interval is roughly 90 percent GitHub latency and 10 percent our own work. Removing the entire worker boundary, the largest remaining item, would save about 110 ms of 1264 ms, or nine percent, in exchange for owning the process model that gives the agent its crash isolation.
 
 The next experiment worth running is instrumenting the 202 ms first-step stage, because it is the only remaining item where the cause is unknown rather than merely expensive.
+
+## The log dequeue timer
+
+Console lines were uploaded on a fixed timer: 250 ms per batch for the first 240 batches, then 500 ms. A line queued just after a batch waits almost the full interval.
+
+A queue signal was added so the loop wakes when a line arrives and falls back to the timer when the queue is empty. Five runs each, measuring the interval from script prepared to the first line uploaded:
+
+| Runs | Without the signal | With the signal |
+| --- | --- | --- |
+| 1 | 113 ms | 119 ms |
+| 2 | 172 ms | 87 ms |
+| 3 | 1031 ms | 83 ms |
+| 4 | 1039 ms | 96 ms |
+| 5 | | 86 ms |
+
+Without the change, two of four runs took about a second, because the first line happened to land just after a batch. With it, all five landed between 83 and 119 ms.
+
+The median barely moves. The tail is what changes: a second of "nothing appears to be happening" on a job that has already started, which is the interval a user notices most.

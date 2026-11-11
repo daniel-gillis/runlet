@@ -1,3 +1,64 @@
+diff --git a/src/Runner.Common/JobServerQueue.cs b/src/Runner.Common/JobServerQueue.cs
+index cfac607..93582f6 100644
+--- a/src/Runner.Common/JobServerQueue.cs
++++ b/src/Runner.Common/JobServerQueue.cs
+@@ -45,6 +45,17 @@ namespace GitHub.Runner.Common
+         // queue for web console line
+         private readonly ConcurrentQueue<ConsoleLineInfo> _webConsoleLineQueue = new();
+ 
++        // runlet: one-shot marker for the first line a job queues. Splits the
++        // measured "first console output" stage into process start and upload.
++        private static int _firstLineQueuedReported;
++
++        // runlet: wake the dequeue loop when a line arrives instead of always
++        // waiting out the batching interval. Without this, first console output
++        // measured bimodal: either about 110ms or about 1030ms, depending on
++        // where the 250ms timer happened to be.
++        private TaskCompletionSource<bool> _webConsoleLineSignal =
++            new(TaskCreationOptions.RunContinuationsAsynchronously);
++
+         // queue for file upload (log file or attachment)
+         private readonly ConcurrentQueue<UploadFileInfo> _fileUploadQueue = new();
+ 
+@@ -249,6 +260,18 @@ namespace GitHub.Runner.Common
+                 }
+ 
+                 _webConsoleLineQueue.Enqueue(new ConsoleLineInfo(stepRecordId, line, lineNumber));
++
++                if (Interlocked.Exchange(ref _firstLineQueuedReported, 1) == 0)
++                {
++                    HostContext.WritePerfCounter("FirstOutputLineQueued");
++                }
++
++                var pending = _webConsoleLineSignal;
++                if (!pending.Task.IsCompleted)
++                {
++                    pending.TrySetResult(true);
++                }
++
+             }
+         }
+ 
+@@ -443,7 +466,18 @@ namespace GitHub.Runner.Common
+                 }
+                 else
+                 {
+-                    await Task.Delay(_webConsoleLineAggressiveDequeue ? _aggressiveDelayForWebConsoleLineDequeue : _delayForWebConsoleLineDequeue);
++                    var interval = _webConsoleLineAggressiveDequeue
++                        ? _aggressiveDelayForWebConsoleLineDequeue
++                        : _delayForWebConsoleLineDequeue;
++                    var signal = _webConsoleLineSignal;
++                    await Task.WhenAny(Task.Delay(interval), signal.Task);
++                    if (signal.Task.IsCompleted)
++                    {
++                        Interlocked.CompareExchange(
++                            ref _webConsoleLineSignal,
++                            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
++                            signal);
++                    }
+                 }
+             }
+         }
 diff --git a/src/Runner.Listener/JobDispatcher.cs b/src/Runner.Listener/JobDispatcher.cs
 index dcc8966..ac596e3 100644
 --- a/src/Runner.Listener/JobDispatcher.cs
@@ -181,3 +242,46 @@ index a3693f8..a7ccc3a 100644
      }
 +
  }
+diff --git a/src/Runner.Worker/Handlers/ScriptHandler.cs b/src/Runner.Worker/Handlers/ScriptHandler.cs
+index b898f05..532e5ad 100644
+--- a/src/Runner.Worker/Handlers/ScriptHandler.cs
++++ b/src/Runner.Worker/Handlers/ScriptHandler.cs
+@@ -2,6 +2,7 @@
+ using System.IO;
+ using System.Linq;
+ using System.Text;
++using System.Threading;
+ using System.Threading.Tasks;
+ using GitHub.DistributedTask.Pipelines.ContextData;
+ using GitHub.DistributedTask.WebApi;
+@@ -137,8 +138,18 @@ namespace GitHub.Runner.Worker.Handlers
+             ExecutionContext.Output("##[endgroup]");
+         }
+ 
++        // runlet: one-shot markers around the first step's preparation, to split
++        // the measured "first console output" stage into its parts.
++        private static int _firstScriptStarted;
++        private static int _firstScriptPrepared;
++
+         public async Task RunAsync(ActionRunStage stage)
+         {
++            if (Interlocked.Exchange(ref _firstScriptStarted, 1) == 0)
++            {
++                HostContext.WritePerfCounter("FirstScriptHandlerStart");
++            }
++
+             // Validate args
+             Trace.Entering();
+             ArgUtil.NotNull(ExecutionContext, nameof(ExecutionContext));
+@@ -335,6 +346,11 @@ namespace GitHub.Runner.Worker.Handlers
+                 StepHost.OutputDataReceived += stdoutManager.OnDataReceived;
+                 StepHost.ErrorDataReceived += stderrManager.OnDataReceived;
+ 
++                if (Interlocked.Exchange(ref _firstScriptPrepared, 1) == 0)
++                {
++                    HostContext.WritePerfCounter("FirstScriptPrepared");
++                }
++
+                 // Execute
+                 int exitCode = await StepHost.ExecuteAsync(ExecutionContext,
+                                             workingDirectory: StepHost.ResolvePathForStepHost(ExecutionContext, workingDirectory),

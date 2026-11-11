@@ -93,7 +93,8 @@ jobs:
           # The patch must not wander into unrelated code.
           for file in $CHANGED; do
             case "$file" in
-              src/Runner.Listener/JobDispatcher.cs|src/Runner.Listener/Runner.cs) ;;
+              src/Runner.Listener/JobDispatcher.cs|src/Runner.Listener/Runner.cs|\
+              src/Runner.Common/JobServerQueue.cs|src/Runner.Worker/Handlers/ScriptHandler.cs) ;;
               *) echo "::error::unexpected file in patch: $file"; exit 1 ;;
             esac
           done
