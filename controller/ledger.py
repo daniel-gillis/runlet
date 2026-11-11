@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     job_id      TEXT PRIMARY KEY,
     repo        TEXT NOT NULL,
     name        TEXT NOT NULL,
+    run_id      TEXT,
     labels      TEXT NOT NULL,          -- json array
+    url         TEXT,                   -- job page, for humans
     state       TEXT NOT NULL,          -- queued | running | done | cancelled
     attempts    INTEGER NOT NULL DEFAULT 0,
     first_seen  REAL NOT NULL,
@@ -53,6 +55,8 @@ class Job:
     repo: str
     name: str
     labels: tuple[str, ...]
+    run_id: str = ""
+    url: str = ""
 
 
 @dataclass(frozen=True)
@@ -85,9 +89,9 @@ class Ledger:
         row = self.db.execute("SELECT state FROM jobs WHERE job_id=?", (job.job_id,)).fetchone()
         if row is None:
             self.db.execute(
-                "INSERT INTO jobs (job_id, repo, name, labels, state, first_seen, updated_at)"
-                " VALUES (?,?,?,?,'queued',?,?)",
-                (job.job_id, job.repo, job.name, _json(job.labels), now, now),
+                "INSERT INTO jobs (job_id, repo, name, run_id, url, labels, state, first_seen, updated_at)"
+                " VALUES (?,?,?,?,?,?,'queued',?,?)",
+                (job.job_id, job.repo, job.name, job.run_id, job.url, _json(job.labels), now, now),
             )
             return True
         if row["state"] in ("done", "cancelled"):
@@ -99,9 +103,20 @@ class Ledger:
 
     def queued(self) -> list[Job]:
         rows = self.db.execute(
-            "SELECT job_id, repo, name, labels FROM jobs WHERE state='queued' ORDER BY first_seen"
+            "SELECT job_id, repo, name, run_id, url, labels, first_seen FROM jobs"
+            " WHERE state='queued' ORDER BY first_seen"
         ).fetchall()
-        return [Job(r["job_id"], r["repo"], r["name"], tuple(_unjson(r["labels"]))) for r in rows]
+        return [Job(r["job_id"], r["repo"], r["name"], tuple(_unjson(r["labels"])),
+                    r["run_id"] or "", r["url"] or "") for r in rows]
+
+    def recent(self, limit: int = 20, since: float = 0.0) -> list[dict]:
+        """Recently finished or cancelled jobs, newest first."""
+        rows = self.db.execute(
+            "SELECT job_id, repo, name, url, state, attempts, first_seen, updated_at FROM jobs"
+            " WHERE state IN ('done','cancelled') AND updated_at >= ?"
+            " ORDER BY updated_at DESC LIMIT ?", (since, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def set_state(self, job_id: str, state: str, now: float | None = None) -> None:
         now = now if now is not None else time.time()

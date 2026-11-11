@@ -88,6 +88,8 @@ class GitHubSource:
                         repo=repo,
                         name=entry.get("name", "?"),
                         labels=tuple(label_names(entry)),
+                        run_id=str(run["id"]),
+                        url=entry.get("html_url", ""),
                     ))
         return jobs
 
@@ -189,6 +191,10 @@ def parse_profile(spec: str, default_image: str) -> tuple[str, str]:
 
 
 def main(argv) -> int:
+    if argv and argv[0] == "status":
+        import status
+        return status.main(argv[1:])
+
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--repo", action="append", required=True, help="owner/repo, repeatable")
@@ -224,11 +230,15 @@ def main(argv) -> int:
         warm_labels=warm_labels if args.min_warm else (),
         warm_repo=args.repo[0],
     )
+    def log(message: str) -> None:
+        print(f"{time.strftime('%H:%M:%S')}  {message}", flush=True)
+
     scheduler = Scheduler(
         ledger=ledger,
         source=GitHubSource(args.repo, token),
         runtime=DockerRuntime(token, profiles, args.image, args.network, args.dry_run),
         policy=policy,
+        log=log,
     )
 
     wake = threading.Event()

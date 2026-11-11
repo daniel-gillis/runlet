@@ -37,6 +37,8 @@ $ python3 controller/runletd.py \
 | `--dry-run` | Log decisions, start nothing |
 | `--once` | One pass, then exit |
 
+To see what the scheduler is doing, run `python3 controller/runletd.py status --state runlet-ledger.db`. It prints what is running now, what is waiting and what finished recently, with job names and repositories. See [scheduler.md](scheduler.md#seeing-what-it-is-doing).
+
 ## Label matching
 
 A JIT configuration's label list replaces the defaults. A runner minted with `["runlet-runner"]` has that label and not `self-hosted`. The controller mints each runner with the job's own labels so the match is exact rather than hoped for.

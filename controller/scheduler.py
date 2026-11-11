@@ -65,11 +65,23 @@ class Report:
 
 
 class Scheduler:
-    def __init__(self, ledger: Ledger, source: Source, runtime: Runtime, policy: Policy):
+    def __init__(self, ledger: Ledger, source: Source, runtime: Runtime, policy: Policy,
+                 log=None):
         self.ledger = ledger
         self.source = source
         self.runtime = runtime
         self.policy = policy
+        # Logging is injected so tests can assert on it and the entrypoint can
+        # decide the format. Default is silent.
+        self.log = log or (lambda message: None)
+
+    def _describe(self, job_id: str) -> str:
+        """Human name for a job, used in every log line."""
+        row = self.ledger.db.execute(
+            "SELECT repo, name FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        if row is None:
+            return job_id
+        return f'{row["repo"]} "{row["name"]}"' if row["name"] else row["repo"]
 
     def reconcile(self, now: float | None = None) -> Report:
         now = now if now is not None else time.time()
@@ -117,12 +129,20 @@ class Scheduler:
                 if attempts >= self.policy.max_attempts:
                     self.ledger.set_state(lease.job_id, "cancelled", now=now)
                     report.cancelled.append(lease.job_id)
+                    self.log(f'giving up on {self._describe(lease.job_id)} after {attempts} '
+                             f'attempts: the runner exited without taking the job')
                 else:
                     self.ledger.set_state(lease.job_id, "queued", now=now)
                     report.retried.append(lease.job_id)
+                    self.log(f'retrying {self._describe(lease.job_id)} '
+                             f'(attempt {attempts + 1} of {self.policy.max_attempts}): '
+                             f'the runner exited without taking the job')
             else:
                 self.ledger.set_state(lease.job_id, "done", now=now)
                 report.completed.append(lease.job_id)
+                elapsed = now - lease.granted_at
+                self.log(f'finished {self._describe(lease.job_id)} after {elapsed:.0f}s '
+                         f'({lease.runner_name})')
 
     def _cancel_absent_jobs(self, waiting: set[str], report: Report, now: float) -> None:
         """Mark jobs that are queued locally but no longer queued upstream."""
@@ -132,6 +152,7 @@ class Scheduler:
                 continue
             self.ledger.set_state(job.job_id, "cancelled", now=now)
             report.cancelled.append(job.job_id)
+            self.log(f'cancelled {self._describe(job.job_id)}: it is no longer queued upstream')
 
     def _dispatch(self, report: Report, now: float) -> None:
         """Start runners for queued jobs, then top up the warm pool."""
@@ -144,6 +165,7 @@ class Scheduler:
             if self.ledger.attempts(job.job_id) >= self.policy.max_attempts:
                 self.ledger.set_state(job.job_id, "cancelled", now=now)
                 report.cancelled.append(job.job_id)
+                self.log(f'giving up on {self._describe(job.job_id)}: attempt limit reached')
                 continue
             if capacity <= 0:
                 break
@@ -153,6 +175,8 @@ class Scheduler:
                 warm = prewarm.pop()
                 self.ledger.assign_prewarm(warm.lease_id, job.job_id, now=now)
                 report.granted.append(warm.lease_id)
+                self.log(f'dispatching {self._describe(job.job_id)} to a warm runner '
+                         f'({warm.runner_name})')
                 continue
 
             if self._grant(job, now):
@@ -178,8 +202,11 @@ class Scheduler:
             granted_at=now,
         )
         if not self.runtime.start(runner_name, job.labels, token, job.repo):
+            self.log(f'could not start a runner for {self._describe(job.job_id)}')
             return False
         self.ledger.grant(lease)
+        self.log(f'dispatching {self._describe(job.job_id)} to {runner_name} '
+                 f'(labels {list(job.labels)}, attempt {token})')
         return True
 
     def _prewarm(self, now: float) -> bool:

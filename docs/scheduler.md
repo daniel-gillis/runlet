@@ -72,3 +72,51 @@ $ sqlite3 runlet-ledger.db 'select job_id, state, attempts from jobs'
 ## Tests
 
 `controller/test_scheduler.py` covers capacity limits, retry with a higher token, completion versus retry after a container exits, the attempt cap, the grace window, restart safety, and warm-pool behavior. The source and runtime are faked, so the tests run in milliseconds.
+
+## Seeing what it is doing
+
+### Logs
+
+Every dispatch, retry, completion and cancellation prints one line naming the job, the repository and the runner:
+
+```
+22:54:49  dispatching daniel-gillis/homelab "smoke" to runlet-130310446675-1 (labels ['runlet-runner'], attempt 1)
+22:55:36  finished daniel-gillis/homelab "smoke" after 49s (runlet-130310446675-1)
+```
+
+Failures name the reason rather than an error code:
+
+```
+retrying daniel-gillis/homelab "build" (attempt 2 of 3): the runner exited without taking the job
+giving up on daniel-gillis/homelab "build" after 3 attempts: the runner exited without taking the job
+cancelled daniel-gillis/homelab "deploy": it is no longer queued upstream
+```
+
+### Status
+
+```console
+$ python3 controller/runletd.py status --state runlet-ledger.db --max 8
+RUNNING 2 of 8
+       6s  integration tests                          daniel-gillis/homelab   attempt 2
+    3m12s  build                                    daniel-gillis/homelab
+
+QUEUED 1
+      45s  deploy                                   daniel-gillis/homelab   runlet-runner
+
+RECENT
+       0s ago  smoke                                daniel-gillis/homelab   ok, took 48s
+     9m ago  lint                                   daniel-gillis/homelab   ok, took 22s
+```
+
+It reads the SQLite file directly, so it works whether or not the scheduler is running. A container that has disappeared but whose lease is still active shows `[container gone, will retry]`, which is the state that used to be invisible.
+
+Two flags make it scriptable:
+
+```console
+$ python3 controller/runletd.py status --state runlet-ledger.db --short
+2 running, 1 queued
+$ python3 controller/runletd.py status --state runlet-ledger.db --json
+{"running": [...], "queued": [...], "recent": [...], "counts": {...}}
+```
+
+Job names, repositories, wait times, elapsed times, retry counts and recent outcomes all come from the ledger, which is why they survive a scheduler restart.

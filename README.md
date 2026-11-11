@@ -67,7 +67,7 @@ The patch touches two files in `actions/runner`. CI applies it to the pinned ups
 | [FAQ](docs/faq.md) | Common questions |
 | [Architecture](docs/architecture.md) | Components, latency budget, open questions |
 | [Runner protocol](docs/runner-protocol.md) | The agent's wire protocol, verified against a live configuration |
-| [Scheduler](docs/scheduler.md) | Ledger, leases, fencing, retries, reconciliation |
+| [Scheduler](docs/scheduler.md) | Ledger, leases, fencing, retries, and the status command |
 | [Changelog](CHANGELOG.md) | Release history |
 
 ## Limitations
