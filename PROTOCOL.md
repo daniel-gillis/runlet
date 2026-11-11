@@ -1,4 +1,4 @@
-# Runlet protocol — draft 0.1
+# Runlet protocol, draft 0.1
 
 A **level-triggered, lease-based job distribution protocol** for CI runners.
 
@@ -16,10 +16,10 @@ owned by GitHub**:
 |---|---|---|
 | runner ⇄ `github.com` (job fetch, logs, artifacts, cache, results) | GitHub | **No.** The runner must speak their wire format or it receives no jobs. |
 | controller ⇄ `broker.actions.githubusercontent.com` (sessions, `JobAvailable`, `AcquireJobs`) | GitHub | **No.** Same reason. |
-| **"a job exists" → "a runner is running it"** (scheduler, queue, assignment, lifecycle) | **us** | Yes — this is the whole design space. |
+| **"a job exists" → "a runner is running it"** (scheduler, queue, assignment, lifecycle) | **us** | Yes, this is the whole design space. |
 
 So a new protocol cannot replace GitHub's. It can replace the layer that
-*consumes* GitHub's, and — if the layer is written behind an adapter — it can
+*consumes* GitHub's, and, if the layer is written behind an adapter, it can
 consume GitLab's, Gitea's, or a plain webhook the same way.
 
 "Infinitely extensible" is therefore not a claim about the wire format. It is a
@@ -44,13 +44,13 @@ fencing, JetStream's ack/redelivery, and Buildkite's dumb-agent simplicity; take
 
 ## 3. Participants
 
-- **Source adapter** — observes an upstream (GitHub, GitLab, webhook) and emits
+- **Source adapter**, observes an upstream (GitHub, GitLab, webhook) and emits
   `JobOffered`. Owns no state that matters; may be restarted at will.
-- **Ledger** — durable, append-only record of every job and its lease history.
+- **Ledger**, durable, append-only record of every job and its lease history.
   Single source of truth. Losing an adapter must never lose a job.
-- **Scheduler** — leases jobs to runners. Stateless; anything it computes can be
+- **Scheduler**, leases jobs to runners. Stateless; anything it computes can be
   recomputed from the ledger.
-- **Runner** — a long-lived, pre-registered worker that holds at most one
+- **Runner**, a long-lived, pre-registered worker that holds at most one
   *active* lease. Long-polls the scheduler; never asks GitHub for work.
 
 ## 4. Messages
@@ -107,8 +107,8 @@ reconcile():
       source_adapter.confirm_still_exists(job)        # upstream may have cancelled it
 ```
 
-This is the single most important property of the design. ARC's worst bug —
-"listener went deaf, job queued for hours while runners sat idle" — is not a bug
+This is the single most important property of the design. ARC's worst bug, 
+"listener went deaf, job queued for hours while runners sat idle", is not a bug
 that can be fixed here; it is a **shape that does not exist**, because there is
 no edge to miss.
 
@@ -132,7 +132,7 @@ design rather than an afterthought.
 | 1 | queued → adapter notices | 2–30 s | **0.05–0.5 s** | 250 ms poll, or webhook; must not depend on a broker long-poll |
 | 2 | runner allocated → image materialised | 5–60 s | **0.1–0.4 s** | lazy-pull (nydus/stargz) or snapshot restore; never a full layer pull |
 | 3 | container/microVM start | 0.1–0.3 s | **0.05–0.15 s** | microVM snapshot restore, or runc + tiny rootfs |
-| 4 | registration | 0.3–1.0 s | **0 s** | JIT config pre-minted in bulk — no GitHub API call on the critical path |
+| 4 | registration | 0.3–1.0 s | **0 s** | JIT config pre-minted in bulk, no GitHub API call on the critical path |
 | 5 | registered → job received | 0.1–0.5 s | 0.1–0.5 s | long-poll; unavoidable upstream floor |
 | 6 | workspace ready | 1–20 s | **0.1–0.5 s** | node-local git mirror + overlay, not a cold clone |
 
@@ -152,14 +152,14 @@ specific: **852 MB is not the agent, it is the distro.**
 
 | Component | Typical | Achievable | How |
 |---|---|---|---|
-| `actions/runner` agent (.NET) | ~200 MB + runtime | **60–90 MB** | the agent is MIT — build it trimmed/AOT instead of taking the release tarball |
+| `actions/runner` agent (.NET) | ~200 MB + runtime | **60–90 MB** | the agent is MIT, build it trimmed/AOT instead of taking the release tarball |
 | Base OS | 300–500 MB Debian | **2–10 MB** | distroless/static; there is no shell to need |
 | Toolchain (node, python, docker CLI) | 300–600 MB | **0 MB in the base** | label-driven read-only overlay images, mounted only when a job asks |
 
 The third row is the structural idea: **do not bake a toolchain into the runner.**
 A job declares `runs-on: [linux, node20]`; the executor overlays a node image
 read-only. The base runner stays small, so cold start only materialises what the
-job's labels require — a job that needs only `git` never pays for Node.
+job's labels require, a job that needs only `git` never pays for Node.
 
 Consequence for the protocol: a runner advertises **capabilities**, and the
 scheduler refuses to place a job on a runner whose overlay set cannot satisfy its
@@ -197,7 +197,7 @@ events and asserts the resulting ledger state.
 |---|---|
 | Scheduler dies | Runners' long-polls fail; leases expire; nothing is lost. New scheduler reads the ledger. |
 | Runner dies mid-job | Lease expires; job re-queued with a higher fencing token; the zombie's acks are rejected. |
-| Ledger unavailable | Scheduler serves nothing. Explicitly **not** degraded to an in-memory queue — failing closed is the point. |
+| Ledger unavailable | Scheduler serves nothing. Explicitly **not** degraded to an in-memory queue, failing closed is the point. |
 | Source adapter down | Jobs keep running; new jobs are not discovered. No orphan class, because nothing was edge-triggered. |
 | Duplicate `JobOffered` | Deduplicated on `job_id`; idempotent. |
 | Clock skew | Deadlines are lease-relative (`deadline = grant_time + ttl`), never wall-clock comparisons between machines. |

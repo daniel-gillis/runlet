@@ -2,14 +2,14 @@
 
 Two ways to use this today:
 
-- **As an image** — build (or pull) the runner image and run one container per job.
-- **As a patch** — apply `patches/runlet-fast-path.patch` to your own
+- **As an image**, build (or pull) the runner image and run one container per job.
+- **As a patch**, apply `patches/runlet-fast-path.patch` to your own
   `actions/runner` checkout and build it however you already build runners.
 
 Be clear about what you are getting: **a faster agent, not a scheduler.** The image
 runs exactly one job and exits, because a JIT-configured runner is single-use by
 GitHub's design. Running a fleet means something must mint configurations and start
-containers — that orchestration is not included yet.
+containers, that orchestration is not included yet.
 
 ---
 
@@ -44,7 +44,7 @@ $ gh api -X POST repos/<owner>/<repo>/actions/runners/generate-jitconfig \
 ```
 
 > **Labels replace the defaults.** Passing `labels[]=runlet` gives the runner
-> *only* that label — `self-hosted` is not added automatically. Your workflow must
+> *only* that label, `self-hosted` is not added automatically. Your workflow must
 > then say `runs-on: [runlet]`, not `runs-on: [self-hosted, runlet]`.
 
 ## 3. Run one job
@@ -84,7 +84,7 @@ $ grep -E "JobFetched|SentJobToWorker" /tmp/perf/Runner.perf
 ```
 
 If `SentJobToWorker` appears **before** `JobRequestRenewed`, the fast path is
-active. On an unpatched runner the order is reversed — that is the whole patch.
+active. On an unpatched runner the order is reversed, that is the whole patch.
 
 ## 5. Or: apply the patch to your own build
 
@@ -106,11 +106,11 @@ its own copy).
 |---|---|---|
 | Dispatch before lock renewal | the worker starts without waiting for an HTTP round trip to GitHub | **1731 → 1470 ms p50**, max 2460 → 1559 ms |
 | Acknowledge concurrent with job fetch | the best-effort acknowledge no longer blocks the fetch | 1451 → 1262 ms in the broker flow |
-| Perf counters (`RefParsed`, `AckDone`, `JobFetched`) | lets you see where the time goes on your own runner | — |
+| Perf counters (`RefParsed`, `AckDone`, `JobFetched`) | exposes where the time goes on your own runner | not applicable |
 
-Both are described in [`measurements.md`](measurements.md), including the
-measurement bugs that produced wrong answers first — worth reading before you
-trust any number, including these.
+All three are described in [`performance.md`](performance.md), including the
+three measurement defects that produced plausible but wrong results. Read that
+section before trusting any figure here, including these.
 
 ## What it does not change
 

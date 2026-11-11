@@ -1,7 +1,7 @@
 # The controller
 
 A JIT-configured runner serves exactly one job. That makes the image fast but
-useless as a fleet on its own — something has to mint configurations and start
+useless as a fleet on its own, something has to mint configurations and start
 containers. `controller/runletd.py` is that something, and it is deliberately
 small.
 
@@ -59,7 +59,7 @@ $ python3 controller/runletd.py \
 ## Design choices worth knowing
 
 **Matching is exact, and that is deliberate.** A JIT config's label list
-*replaces* the defaults — a runner minted with `["runlet-runner"]` does not also
+*replaces* the defaults, a runner minted with `["runlet-runner"]` does not also
 have `self-hosted`. So the controller mints each runner with the *job's own*
 labels, which guarantees a match rather than hoping one exists.
 
@@ -78,7 +78,7 @@ reclaimed by definition when it exits. The controller only counts.
 
 ```ini
 [Unit]
-Description=runletd — scale-from-zero controller for runlet runners
+Description=runletd: scale-from-zero controller for runlet runners
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -133,7 +133,7 @@ $ python3 controller/runletd.py --webhook-port 8787 ...
 ```
 
 Signatures are verified with HMAC-SHA256 (`X-Hub-Signature-256`); unverified
-requests get a 401 and are ignored. The poll interval stays as a safety net — a
+requests get a 401 and are ignored. The poll interval stays as a safety net, a
 webhook is an optimisation, not a dependency.
 
 ### 3. No pre-warming → `--min-warm`
@@ -147,7 +147,7 @@ $ ... --min-warm 2 --max 8
 ```
 
 Measured on the homelab: with two warm runners listening, a dispatched job reached
-`in_progress` in **5 s** — and most of that is GitHub's own queue, since the runner
+`in_progress` in **5 s**, and most of that is GitHub's own queue, since the runner
 was already waiting. The pool then refilled to 2 on the next pass after the job
 consumed one.
 

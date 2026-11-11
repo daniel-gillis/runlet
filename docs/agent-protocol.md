@@ -1,4 +1,4 @@
-# Agent protocol — what a from-scratch agent must speak
+# Agent protocol, what a from-scratch agent must speak
 
 Derived from `actions/runner` (MIT), specifically
 `src/Runner.Listener/MessageListener.cs`. This note records only what the source
@@ -22,7 +22,7 @@ design freedom is entirely in *how fast we do it*, not in what we say.
 7. Acknowledge / delete  ↳ remove the message, renew or exit
 ```
 
-### 1. JIT configuration — VERIFIED against a live config
+### 1. JIT configuration, VERIFIED against a live config
 
 `POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig` returns
 `encoded_jit_config`, which is **double-base64**:
@@ -48,7 +48,7 @@ base64(                                        <- the --jitconfig argument
 Three traps, all of which cost a build to discover:
 
 - **Ids are strings** (`"AgentId":"168"`), not numbers.
-- **Booleans are capitalised strings** (`"True"`) — the document stringifies
+- **Booleans are capitalised strings** (`"True"`), the document stringifies
   everything, so `serde` needs lenient handling for both.
 - **`Ephemeral` is `true` by construction**: a JIT runner serves exactly one job.
   That is the semantics runlet wants, and it is not configurable.
@@ -82,7 +82,7 @@ GetAgentMessageAsync(poolId, sessionId, lastMessageId, runnerStatus,
 
 Notable: the poll carries the **runner's status, version, OS and architecture**
 on every request. That is why a second of latency appears even with an idle
-runner — the server decides whether to hand over work based on that payload.
+runner, the server decides whether to hand over work based on that payload.
 
 ### 4. Decryption
 
@@ -114,7 +114,7 @@ Implemented and tested against a live config (8 unit tests):
 
 - JIT decoding, including the double-base64 envelope, string ids, string booleans
   and the OAuth client structure.
-- Endpoint selection that honours `UseV2Flow` — live value resolves to
+- Endpoint selection that honours `UseV2Flow`, live value resolves to
   `https://broker.actions.githubusercontent.com/`.
 
 Not yet implemented: token exchange, session creation, message poll, decryption,
@@ -124,11 +124,11 @@ job execution, reporting.
 
 Ranked by expected payoff, to be confirmed by instrumentation rather than assumed:
 
-1. **Serial setup before the first step** — session/job-download/log-service
+1. **Serial setup before the first step**, session/job-download/log-service
    initialisation. Candidate for concurrency with step start.
-2. **Job definition download** — at least one network round trip to GitHub;
+2. **Job definition download**, at least one network round trip to GitHub;
    unavoidable but measurable.
-3. **Step preparation** — writing the step script, resolving the shell, building
+3. **Step preparation**, writing the step script, resolving the shell, building
    the environment.
 
 ## Non-negotiables

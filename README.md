@@ -13,6 +13,8 @@
   <img alt="measured" src="https://img.shields.io/badge/assign%E2%86%92first%20step-1470ms%20p50-informational">
 </p>
 
+**Project site: [daniel-gillis.github.io/runlet](https://daniel-gillis.github.io/runlet/)**
+
 ---
 
 ## What this is
@@ -21,7 +23,7 @@ A patch series for the official GitHub Actions runner (MIT) that removes network
 round trips from the start of every job, plus a container image built from it.
 
 It is **not** a reimplementation. The agent must speak GitHub's protocol, so the
-protocol is not ours to redesign — what is ours is *when the runner starts work*.
+protocol is not ours to redesign, what is ours is *when the runner starts work*.
 
 | | before | after |
 |---|---|---|
@@ -29,7 +31,7 @@ protocol is not ours to redesign — what is ours is *when the runner starts wor
 | same, p100 | 2460 ms | **1559 ms** |
 
 Same machine, same job, three runs each. Details and the mistakes found on the way:
-[`docs/measurements.md`](docs/measurements.md).
+[`docs/performance.md`](docs/performance.md).
 
 ## What the patch actually does
 
@@ -86,9 +88,9 @@ Full instructions, including how to verify the patch is active on your own runne
 | [`controller/`](controller/runletd.py) | scale-from-zero controller: queued job → mint → container |
 | [`docs/setup.md`](docs/setup.md) | build, mint, run, verify |
 | [`docs/controller.md`](docs/controller.md) | how the controller works and where it stops |
-| [`docs/measurements.md`](docs/measurements.md) | every number, including the wrong ones |
+| [`docs/performance.md`](docs/performance.md) | every number, including the wrong ones |
 | [`docs/agent-protocol.md`](docs/agent-protocol.md) | what the runner protocol is, verified from a live config |
-| [`docs/agent-strategy.md`](docs/agent-strategy.md) | why a fork beats a reimplementation |
+| [`docs/design.md`](docs/design.md) | why this is a patch rather than a new agent |
 | [`tools/`](tools/) | the measurement harness and the action-compatibility sweep |
 | [`agent/`](agent/) | Rust JIT-config decoder (groundwork for a future agent) |
 | [`PROTOCOL.md`](PROTOCOL.md) | lease-based scheduling design for the not-yet-built scheduler |
@@ -99,7 +101,7 @@ Full instructions, including how to verify the patch is active on your own runne
 - **One job per container, by design.** A JIT-configured runner is single-use.
   Running a fleet is what [`controller/runletd.py`](controller/runletd.py) is for:
   it watches queued jobs, mints a config per job, starts a container, and lets it
-  exit. Verified scale-from-zero and back to zero —
+  exit. Verified scale-from-zero and back to zero, 
   see [`docs/controller.md`](docs/controller.md).
 - **~700 ms of GitHub latency remains** on the critical path. The patch overlaps
   what it can; it cannot remove a fetch.

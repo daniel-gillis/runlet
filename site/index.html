@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>runlet: fast-start CI runners for GitHub Actions</title>
+<meta name="description" content="A patch series and container image that removes network round trips from the start of every GitHub Actions job.">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/runlet/">
+      <img src="assets/logo.svg" alt="" width="28" height="28">
+      <span>runlet</span>
+    </a>
+    <nav>
+      <a href="#measurements">Measurements</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/daniel-gillis/runlet/blob/main/FAQ.md">FAQ</a>
+      <a href="https://github.com/daniel-gillis/runlet">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <h1>Fast-start CI runners for GitHub Actions</h1>
+    <p class="lede">
+      A patch series for the official runner that removes two network round trips
+      from the start of every job, plus a container image and a scale-from-zero
+      controller built from it.
+    </p>
+    <div class="actions">
+      <a class="button primary" href="#install">Get started</a>
+      <a class="button" href="https://github.com/daniel-gillis/runlet">View source</a>
+    </div>
+  </div>
+</section>
+
+<section id="measurements">
+  <div class="wrap">
+    <h2>Measured, not asserted</h2>
+    <p>
+      Same host, same job, three runs per variant, timed by the runner's own
+      performance counters.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Job assigned to first step</th><th>Baseline</th><th>With the patch</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Median</td><td>1731 ms</td><td><strong>1470 ms</strong></td></tr>
+        <tr><td>Maximum</td><td>2460 ms</td><td><strong>1559 ms</strong></td></tr>
+      </tbody>
+    </table>
+    <p class="note">
+      The median gain is 15 percent. The worst case falls by 37 percent, because a
+      lock renewal whose latency was on the critical path no longer blocks
+      dispatch. Full method and raw data in
+      <a href="https://github.com/daniel-gillis/runlet/blob/main/docs/performance.md">docs/performance.md</a>.
+    </p>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>What it changes</h2>
+    <div class="cards">
+      <article>
+        <h3>Dispatch before renewal</h3>
+        <p>
+          The worker starts immediately instead of waiting for an HTTP round trip to
+          GitHub. A failed renewal still stops the worker before any step is
+          reported.
+        </p>
+      </article>
+      <article>
+        <h3>Acknowledge in parallel</h3>
+        <p>
+          The acknowledgement is best-effort by design but used to block the job
+          fetch. It now overlaps it, removing the round trip from the critical path.
+        </p>
+      </article>
+      <article>
+        <h3>Scale from zero</h3>
+        <p>
+          A controller watches queued jobs, mints a single-use configuration for
+          each, and starts one container. Nothing runs when nothing is queued.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <pre><code>docker pull ghcr.io/daniel-gillis/runlet-runner:0.1.0
+
+gh api -X POST repos/OWNER/REPO/actions/runners/generate-jitconfig \
+  -f name=runlet-$(date +%s) -F runner_group_id=1 \
+  -f 'labels[]=runlet-runner' -f work_folder=_work \
+  | jq -r .encoded_jit_config &gt; /tmp/jit.txt
+
+docker run --rm -e RUNNER_JIT_CONFIG="$(cat /tmp/jit.txt)" \
+  ghcr.io/daniel-gillis/runlet-runner:0.1.0</code></pre>
+    <p class="note">
+      A JIT configuration's labels replace the defaults, so the workflow must use
+      <code>runs-on: [runlet-runner]</code> rather than including
+      <code>self-hosted</code>. See the
+      <a href="https://github.com/daniel-gillis/runlet/blob/main/docs/setup.md">setup guide</a>
+      for the controller, warm pools, and verification.
+    </p>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap">
+    <h2>What it does not fix</h2>
+    <ul class="limits">
+      <li><strong>Queue time at GitHub.</strong> About three seconds pass before a runner is told about a job.</li>
+      <li><strong>The job fetch.</strong> Roughly 700 ms of GitHub latency remains on the critical path.</li>
+      <li><strong>One job per container.</strong> JIT runners are single-use by GitHub's design.</li>
+      <li><strong>Linux only.</strong> The image targets linux/amd64 and linux/arm64.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="docs">
+  <div class="wrap">
+    <h2>Documentation</h2>
+    <ul class="docs">
+      <li><a href="https://github.com/daniel-gillis/runlet/blob/main/docs/setup.md">Setup guide</a>, build, mint, run, verify</li>
+      <li><a href="https://github.com/daniel-gillis/runlet/blob/main/docs/controller.md">Controller</a>, scaling, warm pools, webhooks</li>
+      <li><a href="https://github.com/daniel-gillis/runlet/blob/main/docs/performance.md">Performance</a>, every number and how it was produced</li>
+      <li><a href="https://github.com/daniel-gillis/runlet/blob/main/docs/design.md">Design</a>, why this is a patch rather than a new agent</li>
+      <li><a href="https://github.com/daniel-gillis/runlet/blob/main/docs/troubleshooting.md">Troubleshooting</a></li>
+      <li><a href="https://github.com/daniel-gillis/runlet/blob/main/FAQ.md">FAQ</a></li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>
+      MIT licensed. Not affiliated with GitHub, Inc. The runner agent is MIT and is
+      used unmodified apart from the patch series.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

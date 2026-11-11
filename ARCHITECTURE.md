@@ -78,7 +78,7 @@ not optimisable.
 |---|---|---|---|
 | `runc-tiny` | runc + erofs overlays | 0.5–1.5 s | container (namespaces, no privilege) |
 | `microvm` | Firecracker + snapshot restore | 0.2–0.6 s | hardware-virtualised |
-| `criu` | checkpoint/restore | 0.1–0.3 s | container (restored) — fragile, not recommended |
+| `criu` | checkpoint/restore | 0.1–0.3 s | container (restored), fragile, not recommended |
 
 Start with `runc-tiny`: it runs on stock Kubernetes, needs no KVM, no privileged
 pods, and no daemon.
