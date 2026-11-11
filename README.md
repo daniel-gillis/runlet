@@ -7,6 +7,7 @@
 <p align="center"><em>Fast-start CI runners for GitHub Actions.</em></p>
 
 <p align="center">
+  <img alt="CI" src="https://github.com/daniel-gillis/runlet/actions/workflows/ci.yml/badge.svg">
   <img alt="status" src="https://img.shields.io/badge/status-working%20patch%20series-orange">
   <img alt="licence" src="https://img.shields.io/badge/licence-MIT-blue">
   <img alt="measured" src="https://img.shields.io/badge/assign%E2%86%92first%20step-1470ms%20p50-informational">
@@ -57,7 +58,7 @@ time before the runner is even told about it.
 ## Quickstart
 
 ```console
-$ docker buildx build -t runlet-runner ./runner          # ~5-10 min, builds the agent
+$ docker pull ghcr.io/daniel-gillis/runlet-runner:0.1.0   # or build it: see docs/setup.md
 $ gh api -X POST repos/<owner>/<repo>/actions/runners/generate-jitconfig \
     -f name=runlet-$(date +%s) -F runner_group_id=1 \
     -f 'labels[]=runlet' -f work_folder=_work | jq -r .encoded_jit_config > /tmp/jit.txt
