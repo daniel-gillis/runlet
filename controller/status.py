@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -32,6 +33,11 @@ def duration(seconds: float) -> str:
 
 
 def live_containers(prefix: str = "runlet-") -> set[str]:
+    """Names of live runners, from the local docker daemon.
+
+    Raises FileNotFoundError when there is no docker CLI, which is the normal case
+    inside the cluster; callers use the Kubernetes runtime there instead.
+    """
     out = subprocess.run(["docker", "ps", "--filter", f"name={prefix}",
                           "--format", "{{.Names}}"], capture_output=True, text=True)
     if out.returncode:
@@ -39,10 +45,16 @@ def live_containers(prefix: str = "runlet-") -> set[str]:
     return {name for name in out.stdout.split() if name}
 
 
-def collect(ledger: Ledger, now: float | None = None) -> dict:
+def kubernetes_containers(namespace: str, image: str, prefix: str = "runlet-") -> set[str]:
+    from kubernetes_runtime import KubernetesRuntime
+    return set(KubernetesRuntime(namespace, image, prefix=prefix).running())
+
+
+def collect(ledger: Ledger, now: float | None = None, live: set[str] | None = None) -> dict:
     """Everything the renderer needs, as plain data."""
     now = now if now is not None else time.time()
-    live = live_containers()
+    if live is None:
+        live = live_containers()
 
     running = []
     for lease in ledger.active_leases():
@@ -158,6 +170,8 @@ def main(argv) -> int:
     ap.add_argument("--max", type=int, default=None, help="show capacity as 'N of MAX'")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--short", action="store_true", help="one line")
+    ap.add_argument("--runtime", choices=["docker", "kubernetes"], default="docker",
+                    help="where runners are running; kubernetes works in-cluster")
     args = ap.parse_args(argv)
 
     path = Path(args.state)
@@ -165,9 +179,14 @@ def main(argv) -> int:
         print(f"no ledger at {path}. Start the scheduler with --state {path}", file=sys.stderr)
         return 1
 
+    live = None
+    if args.runtime == "kubernetes":
+        live = kubernetes_containers(os.environ.get("RUNLET_NAMESPACE", "homelab"),
+                                     os.environ.get("RUNLET_IMAGE", "ghcr.io/daniel-gillis/runlet-runner:0.1.0"))
+
     ledger = Ledger(path)
     try:
-        state = collect(ledger)
+        state = collect(ledger, live=live)
     finally:
         ledger.close()
 
