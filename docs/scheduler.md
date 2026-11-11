@@ -120,3 +120,52 @@ $ python3 controller/runletd.py status --state runlet-ledger.db --json
 ```
 
 Job names, repositories, wait times, elapsed times, retry counts and recent outcomes all come from the ledger, which is why they survive a scheduler restart.
+
+## Metrics
+
+`--metrics-port` serves Prometheus text on `/metrics` and a readiness probe on `/healthz`. Every value is derived from the ledger, so the numbers survive a restart. Only the reconcile counters live in memory and reset with the process, which is how Prometheus counters are expected to behave.
+
+```console
+$ python3 controller/runletd.py ... --metrics-port 9187
+$ curl -s localhost:9187/metrics | grep -v '^#'
+runlet_jobs{state="queued"} 0
+runlet_jobs{state="running"} 1
+runlet_jobs{state="done"} 4
+runlet_queued_jobs 0
+runlet_runners{kind="job"} 1
+runlet_runners{kind="warm"} 0
+runlet_job_running_seconds{repo="daniel-gillis/homelab",job="smoke",runner="runlet-130317391252-1"} 12.0
+runlet_runner_missing 0
+runlet_reconcile_total 3
+```
+
+| Metric | Type | Meaning |
+| --- | --- | --- |
+| `runlet_jobs{state}` | gauge | Jobs in the ledger by state |
+| `runlet_queued_jobs` | gauge | Jobs waiting for a runner |
+| `runlet_queued_oldest_seconds` | gauge | Age of the longest wait |
+| `runlet_job_wait_seconds{repo,job}` | gauge | Wait time per queued job |
+| `runlet_runners{kind}` | gauge | Runners by kind, job or warm |
+| `runlet_job_running_seconds{repo,job,runner}` | gauge | Elapsed time per running job |
+| `runlet_runner_missing` | gauge | Active leases with no container |
+| `runlet_job_attempts_total` | counter | Retries across all jobs |
+| `runlet_reconcile_total` | counter | Passes since start |
+| `runlet_reconcile_failures_total` | counter | Passes that raised |
+| `runlet_reconcile_duration_seconds` | gauge | Duration of the last pass |
+| `runlet_last_reconcile_timestamp_seconds` | gauge | When the last pass ran |
+
+Two alerts worth having:
+
+```yaml
+- alert: RunletSchedulerStalled
+  expr: time() - runlet_last_reconcile_timestamp_seconds > 120
+  for: 5m
+  annotations: { summary: "runletd has not reconciled in two minutes" }
+
+- alert: RunletRunnerMissing
+  expr: runlet_runner_missing > 0
+  for: 5m
+  annotations: { summary: "leases exist with no container behind them" }
+```
+
+`runlet_last_reconcile_timestamp_seconds` is the signal ARC lacks: it distinguishes a scheduler that is working from one that is still running but no longer receiving jobs.

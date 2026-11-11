@@ -26,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from ledger import Job, Ledger
+from metrics import MetricsServer, PassStats
 from scheduler import Policy, Scheduler
 
 API = "https://api.github.com"
@@ -209,6 +210,8 @@ def main(argv) -> int:
     ap.add_argument("--interval", type=float, default=5.0)
     ap.add_argument("--network", default="")
     ap.add_argument("--webhook-port", type=int, default=0)
+    ap.add_argument("--metrics-port", type=int, default=0,
+                    help="serve Prometheus metrics on this port")
     ap.add_argument("--webhook-secret-env", default="RUNLETD_WEBHOOK_SECRET")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--once", action="store_true")
@@ -241,6 +244,11 @@ def main(argv) -> int:
         log=log,
     )
 
+    stats = PassStats()
+    if args.metrics_port:
+        MetricsServer(args.metrics_port, args.state, stats).start()
+        print(f"metrics on :{args.metrics_port}/metrics", flush=True)
+
     wake = threading.Event()
     if args.webhook_port:
         secret = os.environ.get(args.webhook_secret_env, "")
@@ -253,8 +261,10 @@ def main(argv) -> int:
           f"min-warm={args.min_warm} state={args.state}", flush=True)
 
     while True:
+        started = time.time()
         try:
             report = scheduler.reconcile()
+            stats.record(time.time() - started)
             if report.changed():
                 print(f"observed={report.observed} granted={len(report.granted)} "
                       f"retried={len(report.retried)} completed={len(report.completed)} "
@@ -262,6 +272,7 @@ def main(argv) -> int:
         except KeyboardInterrupt:
             break
         except Exception as error:  # a transient failure must not stop scaling
+            stats.record(time.time() - started, error=f"{type(error).__name__}: {error}")
             print(f"  ! {type(error).__name__}: {error}", flush=True)
         if args.once:
             break
