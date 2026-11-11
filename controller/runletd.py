@@ -212,7 +212,7 @@ def main(argv) -> int:
     ap.add_argument("--interval", type=float, default=5.0)
     ap.add_argument("--runtime", choices=["docker", "kubernetes"], default="docker",
                     help="where runners run: local containers, or pods in this cluster")
-    ap.add_argument("--namespace", default="homelab", help="namespace for kubernetes runtime")
+    ap.add_argument("--namespace", default="default", help="namespace for runner pods")
     ap.add_argument("--service-account", default="", help="service account for runner pods")
     ap.add_argument("--network", default="")
     ap.add_argument("--webhook-port", type=int, default=0)

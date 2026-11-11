@@ -72,7 +72,7 @@ The poll carries the runner's status, version, OS and architecture on every requ
 
 ## Broker flow
 
-Modern runners use `ServerUrlV2`. The message body is a small `RunnerJobRequestRef`, and the agent then fetches the job definition over HTTP. That fetch measured 697 to 719 ms on the homelab.
+Modern runners use `ServerUrlV2`. The message body is a small `RunnerJobRequestRef`, and the agent then fetches the job definition over HTTP. That fetch measured 697 to 719 ms in testing.
 
 The ref carries `ShouldAcknowledge`, `RunnerRequestId`, `RunServiceUrl` and `BillingOwnerId`.
 

@@ -181,7 +181,7 @@ def main(argv) -> int:
 
     live = None
     if args.runtime == "kubernetes":
-        live = kubernetes_containers(os.environ.get("RUNLET_NAMESPACE", "homelab"),
+        live = kubernetes_containers(os.environ.get("RUNLET_NAMESPACE", "default"),
                                      os.environ.get("RUNLET_IMAGE", "ghcr.io/daniel-gillis/runlet-runner:0.1.0"))
 
     ledger = Ledger(path)

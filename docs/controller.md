@@ -55,7 +55,7 @@ A failed mint or a failed `docker run` is logged and the pass continues, so one 
 
 `--min-warm N` keeps N registered runners listening before work arrives. A JIT runner idles after registering, so a queued job goes to an agent that is already waiting instead of paying container startup and configuration minting.
 
-With two warm runners on the homelab, a dispatched job reached `in_progress` in 5 seconds, most of which was GitHub's queue. The pool refilled to two on the next pass after the job consumed one.
+In testing with two warm runners, a dispatched job reached `in_progress` in 5 seconds, most of which was GitHub's queue. The pool refilled to two on the next pass after the job consumed one.
 
 Idle runners hold memory. `--min-warm 0` restores scale-from-zero.
 
