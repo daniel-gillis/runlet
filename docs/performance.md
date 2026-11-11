@@ -95,7 +95,7 @@ One job, after both changes, measured the same way. Total 1264 ms from job messa
 | Job initialized | 83 ms | Parse steps, build contexts | Agent |
 | First console output | 202 ms | Prepare the step, spawn the shell, upload the first line | Agent |
 
-Everything we control after the patch totals **554 ms**. The 710 ms fetch is GitHub's and is not addressable from the runner.
+Everything we control after the patch totals 554 ms. The 710 ms fetch belongs to GitHub and cannot be addressed from the runner.
 
 ## What each remaining stage would cost to remove
 
