@@ -33,7 +33,7 @@ protocol is not ours to redesign, what is ours is *when the runner starts work*.
 Same machine, same job, three runs each. Details and the mistakes found on the way:
 [`docs/performance.md`](docs/performance.md).
 
-## What the patch actually does
+## What the patch does
 
 Instrumenting the runner's own perf counters showed where a trivial job's time goes:
 
@@ -79,7 +79,7 @@ Then target it from a workflow with `runs-on: [runlet]`.
 Full instructions, including how to verify the patch is active on your own runner:
 **[`docs/setup.md`](docs/setup.md)**.
 
-## Repository map
+## Repository layout
 
 | path | what |
 |---|---|
@@ -96,7 +96,7 @@ Full instructions, including how to verify the patch is active on your own runne
 | [`PROTOCOL.md`](PROTOCOL.md) | lease-based scheduling design for the not-yet-built scheduler |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | component design, latency budget, open questions |
 
-## Honest limits
+## Limitations
 
 - **One job per container, by design.** A JIT-configured runner is single-use.
   Running a fleet is what [`controller/runletd.py`](controller/runletd.py) is for:
@@ -107,10 +107,10 @@ Full instructions, including how to verify the patch is active on your own runne
   what it can; it cannot remove a fetch.
 - **~3 s of queue time** before the runner hears about a job. Not ours.
 - **Linux only** today.
-- Every measurement in this repo was produced by a harness that had three separate
-  bugs which each made a wrong result look plausible. Read
-  [`measurements.md`](docs/measurements.md) §9–11 before trusting any of it,
-  including the headline.
+- **The numbers come from a harness that had three defects**, each of which made a
+  wrong result look plausible. They are documented in
+  [`docs/performance.md`](docs/performance.md) under "Measurement corrections",
+  which is worth reading before relying on any figure here, including the headline.
 
 ## Compatibility
 

@@ -28,7 +28,7 @@ runner source. Reimplementing them means reverse engineering several thousand li
 with no compatibility guarantee, and GitHub can change any of it without notice.
 
 The agent is MIT licensed and the changes are small. See
-[design.md](design.md) for the full reasoning.
+[docs/design.md](docs/design.md) for the full reasoning.
 
 ## Does GitHub support patched runners?
 

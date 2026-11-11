@@ -33,7 +33,7 @@ this document specifies.
 |---|---|---|
 | **ARC / `actions/scaleset`** | ephemeral runners; JIT registration; scale-to-zero | **edge-triggered assignment**: a queued job is announced once via `JobAvailable`; if the listener misses it, the job waits forever with idle runners. No re-sweep on session start. |
 | **Kubernetes** | **level-triggered reconciliation** with periodic resync; informers; no missed-state class | assumes a watch channel and a versioned store; heavy to adopt for a single queue |
-| **Buildkite agent** | agent-side pull loop; trivially robust; no central dispatcher to fail | latency bound by poll interval; central token sprawl |
+| **Buildkite agent** | agent-side pull loop; trivially reliable; no central dispatcher to fail | latency bound by poll interval; central token sprawl |
 | **GitLab Runner** | long-poll (`/jobs/request`) with concurrency; proven at scale | bespoke, undocumented wire format; monolithic coordinator |
 | **Temporal / task queues** | durable state, **leases with heartbeat**, at-least-once + idempotency keys | heavyweight runtime; more machinery than a CI queue needs |
 | **NATS JetStream work-queue** | ack/redelivery, max-inflight, durable consumer | external dependency; no notion of a *runner* |
