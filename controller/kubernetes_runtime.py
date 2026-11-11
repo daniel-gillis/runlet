@@ -112,8 +112,13 @@ class KubernetesRuntime:
 
         container = pod["spec"]["containers"][0]
         container["image"] = self.image
+        try:
+            jit = self._mint(repo, runner_name, labels)
+        except RuntimeError as error:
+            print(f"  ! {error}", flush=True)
+            return False
         container["env"] = [
-            {"name": "RUNNER_JIT_CONFIG", "value": self._mint(repo, runner_name, labels)},
+            {"name": "RUNNER_JIT_CONFIG", "value": jit},
             {"name": "RUNNER_ALLOW_RUNASROOT", "value": "1"},
         ]
 
@@ -167,5 +172,9 @@ class KubernetesRuntime:
                 "Content-Type": "application/json",
                 "User-Agent": "runletd/0.3",
             })
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)["encoded_jit_config"]
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.load(response)["encoded_jit_config"]
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", "replace")[:200]
+            raise RuntimeError(f"generate-jitconfig for {runner_name} -> {error.code}: {detail}") from None

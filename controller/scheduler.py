@@ -192,7 +192,10 @@ class Scheduler:
     # ── lease creation ───────────────────────────────────────────────────────
     def _grant(self, job: Job, now: float) -> bool:
         token = self.ledger.next_fencing_token(job.job_id)
-        runner_name = f"runlet-{job.job_id}-{token}"
+        # The suffix keeps names unique per attempt. Without it, a dispatch that
+        # minted a configuration but failed to start a runner reuses the name on
+        # the retry, and GitHub rejects the second registration with a 409.
+        runner_name = f"runlet-{job.job_id}-{token}-{uuid.uuid4().hex[:6]}"
         lease = Lease(
             lease_id=str(uuid.uuid4()),
             job_id=job.job_id,
