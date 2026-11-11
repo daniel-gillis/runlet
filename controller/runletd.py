@@ -177,6 +177,7 @@ class WebhookServer(threading.Thread):
                 except json.JSONDecodeError:
                     event = {}
                 if event.get("action") == "queued":
+                    print("webhook: job queued", flush=True)
                     outer.wake.set()
                 self.send_response(204)
                 self.end_headers()
@@ -290,8 +291,20 @@ def main(argv) -> int:
             print(f"  ! {type(error).__name__}: {error}", flush=True)
         if args.once:
             break
-        wake.wait(timeout=args.interval)
-        wake.clear()
+        if wake.wait(timeout=args.interval):
+            wake.clear()
+            # GitHub sends the webhook as soon as the job exists, but the queued
+            # runs listing can lag by a second or two. Re-check briefly instead of
+            # sleeping a full interval and having the webhook appear to do nothing.
+            for delay in (0.5, 1.0, 2.0):
+                time.sleep(delay)
+                try:
+                    burst = scheduler.reconcile()
+                except Exception as error:
+                    print(f"  ! {type(error).__name__}: {error}", flush=True)
+                    break
+                if burst.granted or burst.observed:
+                    break
 
     ledger.close()
     return 0
