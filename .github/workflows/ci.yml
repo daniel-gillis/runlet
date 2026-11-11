@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controller:
+    name: controller tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests
+        working-directory: controller
+        run: python -m unittest -v test_runletd
+      - name: Byte-compile (catches syntax errors in code paths tests miss)
+        run: python -m py_compile controller/runletd.py tools/*.py
+
+  agent:
+    name: runlet-agent (rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+      - name: Format
+        working-directory: agent
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        working-directory: agent
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        working-directory: agent
+        run: cargo test --all-targets
+
+  patch:
+    name: patch applies to upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply the patch series to a clean upstream checkout
+        run: |
+          set -euo pipefail
+          UPSTREAM=$(cat patches/UPSTREAM_COMMIT)
+          git clone --quiet --filter=blob:none https://github.com/actions/runner.git /tmp/runner
+          cd /tmp/runner
+          git checkout --quiet "$UPSTREAM"
+          git apply --check ${{ github.workspace }}/patches/runlet-fast-path.patch
+          git apply ${{ github.workspace }}/patches/runlet-fast-path.patch
+          echo "patch applies cleanly to $UPSTREAM"
+      - name: Patch touches only what it claims
+        run: |
+          set -euo pipefail
+          CHANGED=$(cd /tmp/runner && git diff --name-only | sort | tr '\n' ' ')
+          echo "changed: $CHANGED"
+          # The patch must not wander into unrelated code.
+          for file in $CHANGED; do
+            case "$file" in
+              src/Runner.Listener/JobDispatcher.cs|src/Runner.Listener/Runner.cs) ;;
+              *) echo "::error::unexpected file in patch: $file"; exit 1 ;;
+            esac
+          done
+
+  image:
+    name: runner image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (verifies the patch applies inside the image too)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: runner/Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: runlet-runner:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

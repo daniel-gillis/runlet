@@ -7,13 +7,15 @@
 # runner starts work. See ../patches/ and ../docs/measurements.md.
 
 ARG UPSTREAM=310a370bf3605f5b092f8af63b3126627de2a210
-# dev.sh only builds for the host platform, so this must match the build platform.
-ARG TARGET_RUNTIME=linux-x64
+# dev.sh only builds for the host platform, so the runtime must match the platform
+# being built. Empty by default: derived from TARGETARCH, which buildx supplies.
+ARG TARGET_RUNTIME=""
 
 # ── build the agent ──────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG UPSTREAM
 ARG TARGET_RUNTIME
+ARG TARGETARCH
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates unzip \
  && rm -rf /var/lib/apt/lists/*
@@ -24,7 +26,16 @@ COPY patches/ /src/patches/
 # A failing apply is a hard stop: never ship an unpatched image that claims to be
 # patched.
 RUN cd /src/repo && git apply --verbose /src/patches/runlet-fast-path.patch
-RUN cd /src/repo/src && ./dev.sh layout Release "$TARGET_RUNTIME"
+RUN set -eux; \
+    RUNTIME="${TARGET_RUNTIME:-}"; \
+    if [ -z "$RUNTIME" ]; then \
+      case "${TARGETARCH:-amd64}" in \
+        arm64) RUNTIME=linux-arm64 ;; \
+        *)     RUNTIME=linux-x64 ;; \
+      esac; \
+    fi; \
+    echo "building agent for $RUNTIME"; \
+    cd /src/repo/src && ./dev.sh layout Release "$RUNTIME"
 
 # ── runtime ──────────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

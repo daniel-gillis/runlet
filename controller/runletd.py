@@ -64,15 +64,22 @@ def api(method: str, path: str, token: str, body: dict | None = None) -> dict:
 
 
 def label_names(job: dict) -> list[str]:
-    """Labels of a job.
+    """Labels of a job, tolerant of both shapes the API returns.
 
-    The jobs endpoint returns labels as plain strings; the runners endpoint returns
-    objects with a `name`. Accept both rather than assuming one shape.
+    The jobs endpoint returns plain strings; the runners endpoint returns objects
+    with a `name`. Anything else — nulls, empty strings — is dropped rather than
+    crashing, because a malformed label must never take the controller down.
     """
-    result = []
+    names: list[str] = []
     for label in job.get("labels") or []:
-        result.append(label if isinstance(label, str) else str(label.get("name", "")))
-    return [name for name in result if name]
+        if isinstance(label, str):
+            if label:
+                names.append(label)
+        elif isinstance(label, dict):
+            name = label.get("name")
+            if isinstance(name, str) and name:
+                names.append(name)
+    return names
 
 
 def queued_jobs(repo: str, token: str) -> list[dict]:
