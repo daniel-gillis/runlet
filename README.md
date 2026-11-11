@@ -9,7 +9,7 @@
 <p align="center">
   <img alt="CI" src="https://github.com/daniel-gillis/runlet/actions/workflows/ci.yml/badge.svg">
   <img alt="status" src="https://img.shields.io/badge/status-working%20patch%20series-orange">
-  <img alt="licence" src="https://img.shields.io/badge/licence-MIT-blue">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="measured" src="https://img.shields.io/badge/assign%E2%86%92first%20step-1470ms%20p50-informational">
 </p>
 
@@ -119,7 +119,7 @@ Full instructions, including how to verify the patch is active on your own runne
 download their toolchains at runtime, so nothing needs to be baked in.
 Full table: [`docs/compatibility.md`](docs/compatibility.md).
 
-## Licence
+## License
 
 MIT. Not affiliated with GitHub, Inc. The runner agent is MIT and is used
 unmodified apart from the patch in `patches/`.

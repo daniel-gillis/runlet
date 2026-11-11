@@ -48,7 +48,7 @@ base64(                                        <- the --jitconfig argument
 Three traps, all of which cost a build to discover:
 
 - **Ids are strings** (`"AgentId":"168"`), not numbers.
-- **Booleans are capitalised strings** (`"True"`), the document stringifies
+- **Booleans are capitalized strings** (`"True"`), the document stringifies
   everything, so `serde` needs lenient handling for both.
 - **`Ephemeral` is `true` by construction**: a JIT runner serves exactly one job.
   That is the semantics runlet wants, and it is not configurable.
@@ -125,7 +125,7 @@ job execution, reporting.
 Ranked by expected payoff, to be confirmed by instrumentation rather than assumed:
 
 1. **Serial setup before the first step**, session/job-download/log-service
-   initialisation. Candidate for concurrency with step start.
+   initialization. Candidate for concurrency with step start.
 2. **Job definition download**, at least one network round trip to GitHub;
    unavoidable but measurable.
 3. **Step preparation**, writing the step script, resolving the shell, building

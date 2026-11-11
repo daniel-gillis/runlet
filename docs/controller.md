@@ -19,7 +19,7 @@ for each queued job, up to capacity:
 the container takes the job, exits, disappears
 ```
 
-## Verified behaviour
+## Verified behavior
 
 ```
 $ python3 controller/runletd.py --repo daniel-gillis/homelab \
@@ -134,7 +134,7 @@ $ python3 controller/runletd.py --webhook-port 8787 ...
 
 Signatures are verified with HMAC-SHA256 (`X-Hub-Signature-256`); unverified
 requests get a 401 and are ignored. The poll interval stays as a safety net, a
-webhook is an optimisation, not a dependency.
+webhook is an optimization, not a dependency.
 
 ### 3. No pre-warming → `--min-warm`
 
@@ -152,7 +152,7 @@ was already waiting. The pool then refilled to 2 on the next pass after the job
 consumed one.
 
 The trade is explicit: idle runners cost memory while idle. `--min-warm 0` keeps
-the original scale-from-zero behaviour.
+the original scale-from-zero behavior.
 
 ### 4. One image for all labels → `--serve label=image`
 

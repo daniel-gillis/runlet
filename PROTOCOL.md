@@ -123,11 +123,11 @@ Contrast the two shapes explicitly:
 **Target: p99 ≤ 3 s from "job queued at the source" to "first step executing",
 starting from zero runners.** No warm pool: capacity exists only while work does.
 
-That target is only reachable if *every* stage below is optimised. Any one stage
+That target is only reachable if *every* stage below is optimized. Any one stage
 left at its default blows the budget on its own, which is why this table is the
 design rather than an afterthought.
 
-| # | Stage | Default | Optimised | Mechanism |
+| # | Stage | Default | Optimized | Mechanism |
 |---|---|---|---|---|
 | 1 | queued → adapter notices | 2–30 s | **0.05–0.5 s** | 250 ms poll, or webhook; must not depend on a broker long-poll |
 | 2 | runner allocated → image materialised | 5–60 s | **0.1–0.4 s** | lazy-pull (nydus/stargz) or snapshot restore; never a full layer pull |
@@ -147,7 +147,7 @@ plus an overlay checkout turns it into a local operation.
 
 ## 7. Making the runner small enough to start fast
 
-"Optimise the runner from the ground up" is the right instinct, and it is
+"Optimize the runner from the ground up" is the right instinct, and it is
 specific: **852 MB is not the agent, it is the distro.**
 
 | Component | Typical | Achievable | How |
@@ -193,7 +193,7 @@ events and asserts the resulting ledger state.
 
 ## 9. Failure model (what the protocol refuses to do)
 
-| Failure | Behaviour |
+| Failure | Behavior |
 |---|---|
 | Scheduler dies | Runners' long-polls fail; leases expire; nothing is lost. New scheduler reads the ledger. |
 | Runner dies mid-job | Lease expires; job re-queued with a higher fencing token; the zombie's acks are rejected. |

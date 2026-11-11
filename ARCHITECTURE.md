@@ -70,7 +70,7 @@ a webhook is lost. Adapters are stateless and restartable.
 | workspace | 100–500 ms | git mirror |
 
 Sum of the parts we own: **≈ 0.3–1.1 s**. The rest is GitHub's and is measurable,
-not optimisable.
+not optimizable.
 
 ## Executor profiles
 
@@ -88,7 +88,7 @@ pods, and no daemon.
 - Interpreting workflows. runlet moves jobs; the agent runs them.
 - Provisioning nodes. We scale leases; the cluster scales machines.
 - Replacing the GitHub runner agent. It is MIT and must speak GitHub's protocol.
-- Being a general-purpose job system. Optimising for one thing is the only way
+- Being a general-purpose job system. Optimizing for one thing is the only way
   to be fast at it.
 
 ## Open questions
