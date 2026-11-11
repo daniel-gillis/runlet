@@ -4,122 +4,80 @@
 
 <h1 align="center">runlet</h1>
 
-<p align="center"><em>Fast-start CI runners for GitHub Actions.</em></p>
+<p align="center">Fast-start runners for GitHub Actions, built as a patch to the official agent.</p>
 
 <p align="center">
-  <img alt="CI" src="https://github.com/daniel-gillis/runlet/actions/workflows/ci.yml/badge.svg">
-  <img alt="status" src="https://img.shields.io/badge/status-working%20patch%20series-orange">
+  <a href="https://github.com/daniel-gillis/runlet/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/daniel-gillis/runlet/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="measured" src="https://img.shields.io/badge/assign%E2%86%92first%20step-1470ms%20p50-informational">
+  <img alt="cold start" src="https://img.shields.io/badge/assign%20to%20first%20step-1470ms%20p50-informational">
 </p>
 
-**Project site: [daniel-gillis.github.io/runlet](https://daniel-gillis.github.io/runlet/)**
+A GitHub Actions runner spends about a second and a half on paperwork before the first step runs. Two of those steps are HTTP calls to GitHub that the agent makes in series. Both can be moved off the critical path.
 
----
+runlet is a patch series for the official runner (MIT licensed) that does that, plus a container image built from it and a controller that starts runners when jobs appear.
 
-## What this is
+| Job assigned to first step | Baseline | Patched |
+| --- | --- | --- |
+| Median | 1731 ms | 1470 ms |
+| Maximum | 2460 ms | 1559 ms |
 
-A patch series for the official GitHub Actions runner (MIT) that removes network
-round trips from the start of every job, plus a container image built from it.
+Three runs per variant, one host, one job. Method and raw data are in [docs/performance.md](docs/performance.md).
 
-It is **not** a reimplementation. The agent must speak GitHub's protocol, so the
-protocol is not ours to redesign, what is ours is *when the runner starts work*.
-
-| | before | after |
-|---|---|---|
-| job assigned → first step (p50) | 1731 ms | **1470 ms** |
-| same, p100 | 2460 ms | **1559 ms** |
-
-Same machine, same job, three runs each. Details and the mistakes found on the way:
-[`docs/performance.md`](docs/performance.md).
-
-## What the patch does
-
-Instrumenting the runner's own perf counters showed where a trivial job's time goes:
-
-```
-job message received
-  → lock renewal (HTTP to GitHub)      2.4 s on a cluster node, 1.2 s locally  ← blocked dispatch
-  → spawn Runner.Worker (new .NET process)
-  → acknowledge (HTTP)                  133 ms                                 ← blocked the fetch
-  → fetch job definition (HTTP)         697 ms                                 ← unavoidable
-  → first step executes
-```
-
-Two of those waits were pure overhead:
-
-1. **Dispatch no longer waits for the lock renewal.** The worker starts
-   immediately; the renewal is enforced straight after hand-off, so a failed
-   renewal still kills the worker before any step is reported.
-2. **Acknowledge runs concurrently with the job fetch.** It is documented
-   "best-effort" yet was awaited first.
-
-What is left is GitHub's own latency: ~700 ms to fetch the job, plus ~3 s of queue
-time before the runner is even told about it.
-
-## Quickstart
+## Install
 
 ```console
-$ docker pull ghcr.io/daniel-gillis/runlet-runner:0.1.0   # or build it: see docs/setup.md
-$ gh api -X POST repos/<owner>/<repo>/actions/runners/generate-jitconfig \
+$ docker pull ghcr.io/daniel-gillis/runlet-runner:0.1.0
+
+$ gh api -X POST repos/OWNER/REPO/actions/runners/generate-jitconfig \
     -f name=runlet-$(date +%s) -F runner_group_id=1 \
-    -f 'labels[]=runlet' -f work_folder=_work | jq -r .encoded_jit_config > /tmp/jit.txt
-$ docker run --rm -e RUNNER_JIT_CONFIG="$(cat /tmp/jit.txt)" runlet-runner
+    -f 'labels[]=runlet-runner' -f work_folder=_work \
+  | jq -r .encoded_jit_config > /tmp/jit.txt
+
+$ docker run --rm -e RUNNER_JIT_CONFIG="$(cat /tmp/jit.txt)" \
+    ghcr.io/daniel-gillis/runlet-runner:0.1.0
 ```
 
-For a fleet instead of one job, run the controller:
+The runner registers, takes one job, and exits. Point a workflow at it with `runs-on: [runlet-runner]`. A JIT configuration's label list replaces the defaults, so adding `self-hosted` to `runs-on` will match nothing.
+
+To serve more than one job, run the controller instead of a single container:
 
 ```console
 $ GITHUB_TOKEN=$(gh auth token) python3 controller/runletd.py \
-    --repo <owner>/<repo> --serve runlet-runner --image runlet-runner --max 8
+    --repo OWNER/REPO --serve runlet-runner \
+    --image ghcr.io/daniel-gillis/runlet-runner:0.1.0 --min-warm 2 --max 8
 ```
 
-Then target it from a workflow with `runs-on: [runlet]`.
+## What the patch changes
 
-Full instructions, including how to verify the patch is active on your own runner:
-**[`docs/setup.md`](docs/setup.md)**.
+`JobDispatcher` waits for a lock renewal, an HTTP call to GitHub, before it starts the worker process. The patch starts the worker first and enforces the renewal right after hand-off, so a failed renewal still stops the worker before any step reports.
 
-## Repository layout
+The broker flow acknowledges a job and then fetches it, in series. The patch runs both at once.
 
-| path | what |
-|---|---|
-| [`patches/`](patches/) | the patch series, pinned to an upstream commit |
-| [`runner/`](runner/Dockerfile) | multi-stage image: builds the patched agent, packages a runtime |
-| [`controller/`](controller/runletd.py) | scale-from-zero controller: queued job → mint → container |
-| [`docs/setup.md`](docs/setup.md) | build, mint, run, verify |
-| [`docs/controller.md`](docs/controller.md) | how the controller works and where it stops |
-| [`docs/performance.md`](docs/performance.md) | every number, including the wrong ones |
-| [`docs/agent-protocol.md`](docs/agent-protocol.md) | what the runner protocol is, verified from a live config |
-| [`docs/design.md`](docs/design.md) | why this is a patch rather than a new agent |
-| [`tools/`](tools/) | the measurement harness and the action-compatibility sweep |
-| [`agent/`](agent/) | Rust JIT-config decoder (groundwork for a future agent) |
-| [`PROTOCOL.md`](PROTOCOL.md) | lease-based scheduling design for the not-yet-built scheduler |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | component design, latency budget, open questions |
+The patch touches two files in `actions/runner`. CI applies it to the pinned upstream commit and fails if it touches anything else.
+
+## Documentation
+
+| | |
+| --- | --- |
+| [Setup](docs/setup.md) | Build, mint a configuration, run, confirm the patch is active |
+| [Controller](docs/controller.md) | Scaling, warm pools, webhooks, per-label images |
+| [Performance](docs/performance.md) | Every number and how it was produced |
+| [Design](docs/design.md) | Why this is a patch rather than a new agent |
+| [Troubleshooting](docs/troubleshooting.md) | Job stays queued, container exits, build fails |
+| [FAQ](docs/faq.md) | Common questions |
+| [Architecture](docs/architecture.md) | Components, latency budget, open questions |
+| [Runner protocol](docs/runner-protocol.md) | The agent's wire protocol, verified against a live configuration |
+| [Scheduler proposal](docs/proposals/scheduler.md) | Lease-based job distribution, not implemented |
+| [Changelog](CHANGELOG.md) | Release history |
 
 ## Limitations
 
-- **One job per container, by design.** A JIT-configured runner is single-use.
-  Running a fleet is what [`controller/runletd.py`](controller/runletd.py) is for:
-  it watches queued jobs, mints a config per job, starts a container, and lets it
-  exit. Verified scale-from-zero and back to zero, 
-  see [`docs/controller.md`](docs/controller.md).
-- **~700 ms of GitHub latency remains** on the critical path. The patch overlaps
-  what it can; it cannot remove a fetch.
-- **~3 s of queue time** before the runner hears about a job. Not ours.
-- **Linux only** today.
-- **The numbers come from a harness that had three defects**, each of which made a
-  wrong result look plausible. They are documented in
-  [`docs/performance.md`](docs/performance.md) under "Measurement corrections",
-  which is worth reading before relying on any figure here, including the headline.
-
-## Compatibility
-
-`tools/compat_sweep.py` reads the `runs.using` field of the most-used actions:
-**24 of 25 declare `node20`**, which the agent bundles. The `setup-*` actions
-download their toolchains at runtime, so nothing needs to be baked in.
-Full table: [`docs/compatibility.md`](docs/compatibility.md).
+- About three seconds pass at GitHub before a runner is told about a queued job. Nothing here changes that.
+- Roughly 700 ms of job-fetch latency stays on the critical path. The patch overlaps what it can.
+- A JIT runner serves one job. Reusing a runner would need token registration and would carry state between jobs.
+- Linux only, amd64 and arm64.
+- GitHub Enterprise Server is untested.
 
 ## License
 
-MIT. Not affiliated with GitHub, Inc. The runner agent is MIT and is used
-unmodified apart from the patch in `patches/`.
+MIT. Not affiliated with GitHub, Inc. The runner agent is MIT licensed and is used unmodified apart from the patch series.

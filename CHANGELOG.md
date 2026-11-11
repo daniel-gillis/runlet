@@ -1,41 +1,27 @@
 # Changelog
 
-All notable changes to this project are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
-[semantic versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-11-10
+## 0.1.0 - 2026-11-10
 
-First release. The project is usable but new.
+First release.
 
 ### Added
 
-- **Patch series** against `actions/runner` commit `310a370`, dispatched before the
-  first lock renewal and acknowledging jobs concurrently with the job fetch.
-- **Runner image** built from the patched agent, published for `linux/amd64` and
-  `linux/arm64` with SBOM and provenance attestation.
-- **Controller** (`controller/runletd.py`) that scales from zero: it watches queued
-  jobs, mints a single-use JIT configuration per job, and starts one container per
-  job. Supports multiple repositories, label-to-image mapping, warm pools, and
-  optional webhook wakeup.
-- **Measurements** for every claim, with the measurement defects recorded alongside
-  the results.
-- **Compatibility study** showing that 24 of the 25 most-used GitHub Actions declare
-  `node20`, which the agent bundles.
-- **CI** covering controller tests, agent formatting, linting and tests, patch
-  application against a clean upstream checkout, and an image build.
+- Patch for `actions/runner` at commit `310a370` (recorded in `patches/UPSTREAM_COMMIT`) that dispatches jobs before waiting for the lock renewal and acknowledges them while fetching the job.
+- Container image built from the patched agent, published for amd64 and arm64 with attestations.
+- Controller that starts one container per queued job and scales back to zero, with worker pools, label routing, multiple repositories and an optional webhook trigger.
+- Measurement harness and the results in `docs/performance.md`.
+- Compatibility study of the most-used actions in `docs/compatibility.md`.
+- CI covering controller tests, agent formatting and tests, patch application, and an image build.
 
-### Performance
+### Measured
 
-- Job assigned to first step: 1731 ms to 1470 ms at the median, and 2460 ms to
-  1559 ms at the maximum, measured on a single host over three runs per variant.
+- Assigned to first step: 1731 ms to 1470 ms at the median, 2460 ms to 1559 ms at the maximum, over three runs per variant on one host.
 
 ### Known limitations
 
-- One job per container. Reuse requires token-based registration and accepting
-  state carried between jobs.
-- Approximately 700 ms of GitHub job-fetch latency and approximately 3 seconds of
-  queue time remain on the critical path and are not addressable here.
+- One job per container. Reuse would need token registration and state handling between jobs.
+- About 700 ms of job fetch and about 3 seconds of queue time remain on the critical path.
 - Linux only.
-- No per-job toolchain images beyond the label-to-image mapping.
-- GitHub Enterprise Server is untested.
+- GitHub Enterprise Server untested.

@@ -1,42 +1,22 @@
-# The controller
+# Controller
 
-A JIT-configured runner serves exactly one job. That makes the image fast but
-useless as a fleet on its own, something has to mint configurations and start
-containers. `controller/runletd.py` is that something, and it is deliberately
-small.
+A JIT-configured runner serves one job, so an image on its own cannot serve a queue. `controller/runletd.py` fills that role. It watches for queued jobs, mints a configuration for each, and starts one container per job.
 
-## What it does
+## How a pass works
 
 ```
-poll: queued jobs whose labels we serve
-  ↓
-capacity = max - running containers
-  ↓
+read queued jobs whose labels the profile serves
+capacity = max - containers already running
 for each queued job, up to capacity:
-    mint a single-use JIT config with that job's labels
-    docker run -d --rm <image> with the config in an env var
-  ↓
-the container takes the job, exits, disappears
+    mint a single-use configuration with that job's labels
+    docker run -d --rm <image> with the configuration in an environment variable
+the container takes the job, exits, and is removed by docker
 ```
-
-## Verified behavior
-
-```
-$ python3 controller/runletd.py --repo daniel-gillis/homelab \
-    --serve runlet-runner --image runlet-runner:dev --max 2 --once
-runletd: serving daniel-gillis/homelab for labels ['runlet-runner'] (max 2, ...)
-queued=2 active=0 capacity=2
-  started runlet-130077768121 for job 'smoke' labels=['runlet-runner']
-  started runlet-130077752578 for job 'smoke' labels=['runlet-runner']
-```
-
-Both jobs then ran and **both containers exited**. `docker ps` afterwards: zero.
-Scale from zero, and back to zero, with no state kept between passes.
 
 ## Usage
 
 ```console
-$ export GITHUB_TOKEN=...            # repo scope is enough
+$ export GITHUB_TOKEN=...            # repository scope is enough
 $ python3 controller/runletd.py \
     --repo daniel-gillis/homelab \
     --serve runlet-runner \
@@ -45,36 +25,62 @@ $ python3 controller/runletd.py \
     --interval 5
 ```
 
-| flag | meaning |
-|---|---|
-| `--repo` | `owner/repo` to serve |
-| `--image` | runner image to start |
-| `--serve` | a label we accept; repeatable, and a job is served only if **all** of its labels are covered |
-| `--max` | hard cap on concurrent runners, so a queue spike cannot exhaust the host |
-| `--interval` | poll period, seconds |
-| `--network` | docker network to attach runners to |
-| `--once` | one pass, for testing |
-| `--dry-run` | log decisions, start nothing |
+| Flag | Meaning |
+| --- | --- |
+| `--repo` | `owner/repo` to serve. Repeat for more repositories. |
+| `--image` | Default image for profiles that do not name one |
+| `--serve` | A label, or `label=image`. Repeatable. |
+| `--max` | Cap on concurrent runners per profile |
+| `--min-warm` | Idle registered runners to keep ready |
+| `--interval` | Poll period in seconds |
+| `--webhook-port` | Listen for `workflow_job` events |
+| `--dry-run` | Log decisions, start nothing |
+| `--once` | One pass, then exit |
 
-## Design choices worth knowing
+## Label matching
 
-**Matching is exact, and that is deliberate.** A JIT config's label list
-*replaces* the defaults, a runner minted with `["runlet-runner"]` does not also
-have `self-hosted`. So the controller mints each runner with the *job's own*
-labels, which guarantees a match rather than hoping one exists.
+A JIT configuration's label list replaces the defaults. A runner minted with `["runlet-runner"]` has that label and not `self-hosted`. The controller mints each runner with the job's own labels so the match is exact rather than hoped for.
 
-**Containers are the only state.** There is no desired-state store, no database, no
-reconciliation loop beyond "count what is running". Restart the controller and it
-re-derives everything on the next pass. Losing the controller mid-queue costs at
-most one poll interval.
+A job with no labels is never served, because a runner started for it could not match.
 
-**Failure is contained.** A failed mint or a failed `docker run` is logged and the
-loop continues; one bad job cannot stop scaling for the rest.
+## Capacity is derived, not stored
 
-**It does not wait for jobs to finish.** Each container is `--rm`, so capacity is
-reclaimed by definition when it exits. The controller only counts.
+The controller keeps no desired-state record. It counts running containers by name prefix and starts the difference. Restart it and the next pass rebuilds the same view. A job that finishes frees its capacity when the container exits, which `--rm` guarantees.
 
-## Running it as a service
+A failed mint or a failed `docker run` is logged and the pass continues, so one bad job does not stop the rest.
+
+## Warm runners
+
+`--min-warm N` keeps N registered runners listening before work arrives. A JIT runner idles after registering, so a queued job goes to an agent that is already waiting instead of paying container startup and configuration minting.
+
+With two warm runners on the homelab, a dispatched job reached `in_progress` in 5 seconds, most of which was GitHub's queue. The pool refilled to two on the next pass after the job consumed one.
+
+Idle runners hold memory. `--min-warm 0` restores scale-from-zero.
+
+## Several repositories and images
+
+```console
+$ python3 controller/runletd.py \
+    --repo owner/a --repo owner/b \
+    --serve runlet-runner \
+    --serve runlet-py=ghcr.io/you/runlet-runner:py \
+    --serve runlet-docker=ghcr.io/you/runlet-runner:docker
+```
+
+Each label gets its own image and its own pool with an independent `--max`.
+
+## Webhooks
+
+Polling bounds dispatch latency to `--interval`. A webhook removes that bound:
+
+```console
+$ export RUNLETD_WEBHOOK_SECRET=...      # same secret as the GitHub webhook
+$ python3 controller/runletd.py --webhook-port 8787 ...
+```
+
+The listener verifies `X-Hub-Signature-256` with HMAC-SHA256 and returns 401 for anything else. A `workflow_job` with action `queued` wakes the loop immediately. Polling stays as a fallback, so a missed webhook delays a job by one interval rather than losing it.
+
+## Service unit
 
 ```ini
 [Unit]
@@ -98,79 +104,9 @@ ReadWritePaths=/run
 WantedBy=multi-user.target
 ```
 
-## Limits, stated plainly
+## Not handled
 
-- **One repository per process.** Multi-repo means running several instances; the
-  token scope is the natural boundary.
-- **Polling, not webhooks.** The default 5 s interval bounds how long a queued job
-  waits for a runner. Webhooks would cut that; they need a public endpoint and a
-  shared secret, which is a different deployment shape.
-- **No queue-depth awareness beyond the API.** GitHub exposes queued runs, not
-  queue latency, so the controller cannot pre-emptively warm capacity.
-- **No per-profile images yet.** `--serve` accepts labels, but every runner uses
-  one image. Multiple toolchain profiles would mean a label-to-image map.
-
-## Working around the four limits
-
-Each limit in the section above now has a working answer.
-
-### 1. One repository per process → `--repo` is repeatable
-
-```console
-$ python3 controller/runletd.py --repo owner/a --repo owner/b --serve runlet-runner ...
-```
-
-One process, one token, one loop over multiple repositories.
-
-### 2. Polling latency → `--webhook-port`
-
-Polling bounds dispatch latency to the poll interval. With a webhook the loop
-wakes the moment GitHub reports a `workflow_job` that is `queued`:
-
-```console
-$ export RUNLETD_WEBHOOK_SECRET=...        # same secret as the GitHub webhook
-$ python3 controller/runletd.py --webhook-port 8787 ...
-```
-
-Signatures are verified with HMAC-SHA256 (`X-Hub-Signature-256`); unverified
-requests get a 401 and are ignored. The poll interval stays as a safety net, a
-webhook is an optimization, not a dependency.
-
-### 3. No pre-warming → `--min-warm`
-
-**Verified:** a JIT runner idles happily after registering ("Listening for Jobs"),
-so a warm pool removes container startup and config minting from the dispatch
-path entirely.
-
-```console
-$ ... --min-warm 2 --max 8
-```
-
-Measured on the homelab: with two warm runners listening, a dispatched job reached
-`in_progress` in **5 s**, and most of that is GitHub's own queue, since the runner
-was already waiting. The pool then refilled to 2 on the next pass after the job
-consumed one.
-
-The trade is explicit: idle runners cost memory while idle. `--min-warm 0` keeps
-the original scale-from-zero behavior.
-
-### 4. One image for all labels → `--serve label=image`
-
-```console
-$ python3 controller/runletd.py \
-    --serve runlet-runner \
-    --serve runlet-py=ghcr.io/you/runlet-runner:py \
-    --serve runlet-docker=ghcr.io/you/runlet-runner:docker
-```
-
-Each label gets its own image and its own pool, with independent `--max`. A job
-requesting `runs-on: [runlet-py]` can only be served by a runner minted with that
-label, so the mapping is unambiguous.
-
-## What is still not solved
-
-- **~700 ms job fetch** on the critical path inside the agent. Not a controller
-  problem; it needs change 3 in the runner (start the worker before the fetch).
-- **~3 s queue time at GitHub.** Not addressable at all.
-- **No queue-depth signal.** GitHub exposes queued runs, not queue latency, so the
-  controller cannot pre-emptively grow beyond `min-warm` before work is visible.
+- One repository set per process. Several instances mean several tokens.
+- GitHub exposes queued runs, not queue latency, so the controller cannot grow capacity before a job is visible.
+- No per-job toolchain images beyond the label-to-image map.
+- The job fetch inside the agent, about 700 ms, is not something the controller can move.

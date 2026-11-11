@@ -24,6 +24,33 @@ jobs:
       - name: Byte-compile (catches syntax errors in code paths tests miss)
         run: python -m py_compile controller/runletd.py tools/*.py
 
+  docs:
+    name: documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Slop check
+        run: python3 tools/slop_check.py --fail
+      - name: Relative links resolve
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          from pathlib import Path
+          broken = []
+          for md in Path(".").rglob("*.md"):
+              if ".git" in str(md):
+                  continue
+              for t in re.findall(r"\]\((?!https?:|#|mailto:)([^)#]+)", md.read_text()):
+                  if not (md.parent / t).resolve().exists():
+                      broken.append(f"{md}: {t}")
+          if broken:
+              print("\n".join(broken)); sys.exit(1)
+          print("all relative links resolve")
+          PY
+
   agent:
     name: runlet-agent (rust)
     runs-on: ubuntu-latest

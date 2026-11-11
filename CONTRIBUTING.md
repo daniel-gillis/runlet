@@ -1,66 +1,51 @@
 # Contributing
 
-## Before you start
+## What this project expects
 
-This project has one hard rule: **claims require measurements.** If a change is
-described as faster, smaller, or more reliable, include the command that shows it
-and the output. Prose is not evidence.
+Claims need measurements. If a change is described as faster, smaller or more reliable, include the command and the output. Prose is not evidence.
 
-The second rule is that the patch must stay small. It modifies two files in
-`actions/runner`. A change that touches more needs a strong reason, because the
-patch has to be rebased onto every upstream release.
+The patch stays small. It changes two files in `actions/runner`, because it has to be rebased onto every upstream release. A change that touches more needs a reason that survives review.
 
-## Development setup
+## Setup
 
-Requirements: Docker, Python 3.9 or newer, and Rust 1.89 or newer for the agent
-crate.
+Docker, Python 3.9 or newer, and Rust 1.89 or newer.
 
 ```console
-$ python3 -m unittest discover -s controller -v      # controller tests
+$ python3 -m unittest discover -s controller -v
 $ cd agent && cargo test && cargo clippy --all-targets -- -D warnings
 $ docker build -f runner/Dockerfile -t runlet-runner:dev .
 ```
 
-To change the patch itself:
+## Changing the patch
 
 ```console
 $ git clone https://github.com/actions/runner.git && cd runner
 $ git checkout $(cat ../runlet/patches/UPSTREAM_COMMIT)
 $ git apply ../runlet/patches/runlet-fast-path.patch
-# edit, then regenerate:
+# edit, then regenerate
 $ git diff > ../runlet/patches/runlet-fast-path.patch
 ```
 
-## Measuring a change
+CI applies the patch to the pinned commit and fails if it touches a file other than the two it is allowed to touch.
 
-The harness runs one real GitHub job against a locally built agent and reports where
-the time went.
+## Measuring a change
 
 ```console
 $ python3 tools/measure_agent.py --variant my-change --runs 3
 ```
 
-Use at least three runs and report the median and the maximum. Single runs are
-noise. Two specific traps, both of which produced wrong results here:
+Use at least three runs and report the median and the maximum. Two traps that produced wrong results here:
 
-- Identical spread across runs usually means the instrument is broken, not that the
-  code is deterministic.
-- A runner takes the oldest queued job, so a stale queued run will be measured
-  instead of the new one. The harness drains the queue first; keep it that way.
+- Identical spread across runs usually means the instrument is broken, not that the code is deterministic.
+- A runner takes the oldest queued job, so a stale queued run will be measured instead of the new one. The harness drains the queue first.
 
 ## Pull requests
 
-- Keep the description factual: what changed, what was measured, what was not.
-- Update the documentation that the change affects. `docs/performance.md` carries
-  every number; `FAQ.md` carries the answers people ask for.
-- Run the full test set. CI also verifies that the patch applies to the pinned
-  upstream commit and touches only the two files it is allowed to touch.
-- New documentation and code comments are written in US English, in a neutral
-  voice, without first person narration.
+- Describe what changed, what you measured, and what you did not measure.
+- Update the documentation the change affects. `docs/performance.md` holds the numbers.
+- Run the full test suite. CI also checks that the patch applies and stays within its two files.
+- Write documentation and comments in US English, in a neutral voice, without first person narration.
 
 ## Reporting a problem
 
-Include the runner version, the image tag or digest, the KUBECONFIG-independent
-details of your setup, and the output of one job with `RUNNER_PERFLOG` enabled. If
-you are unsure whether the problem also happens without the patch, testing on an
-unmodified runner is the fastest way to narrow it down.
+Include the agent version, the image tag or digest, and the output of one job run with `RUNNER_PERFLOG` enabled. If you are not sure whether the problem exists without the patch, test on an unmodified runner first.
