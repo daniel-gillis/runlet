@@ -10,7 +10,7 @@ existing to a runner having picked it up. That is the part of cold start we do
 not control, so it caps any end-to-end latency claim. `started_at →
 completed_at` is the runner's own overhead for a trivial job.
 
-    python3 tools/bench_runner.py --repo daniel-gillis/homelab --runs 10
+    python3 tools/bench_runner.py --repo OWNER/REPO --runs 10
 """
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def pct(values: list[float], q: float) -> float:
 
 def main(argv) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default="daniel-gillis/homelab")
+    ap.add_argument("--repo", required=True, help="owner/repo to measure")
     ap.add_argument("--workflow", default="bench-runner.yml")
     ap.add_argument("--ref", default="main")
     ap.add_argument("--runs", type=int, default=10)

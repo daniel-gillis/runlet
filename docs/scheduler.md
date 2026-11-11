@@ -80,16 +80,16 @@ $ sqlite3 runlet-ledger.db 'select job_id, state, attempts from jobs'
 Every dispatch, retry, completion and cancellation prints one line naming the job, the repository and the runner:
 
 ```
-22:54:49  dispatching daniel-gillis/homelab "smoke" to runlet-130310446675-1 (labels ['runlet-runner'], attempt 1)
-22:55:36  finished daniel-gillis/homelab "smoke" after 49s (runlet-130310446675-1)
+22:54:49  dispatching OWNER/REPO "smoke" to runlet-130310446675-1 (labels ['runlet-runner'], attempt 1)
+22:55:36  finished OWNER/REPO "smoke" after 49s (runlet-130310446675-1)
 ```
 
 Failures name the reason rather than an error code:
 
 ```
-retrying daniel-gillis/homelab "build" (attempt 2 of 3): the runner exited without taking the job
-giving up on daniel-gillis/homelab "build" after 3 attempts: the runner exited without taking the job
-cancelled daniel-gillis/homelab "deploy": it is no longer queued upstream
+retrying OWNER/REPO "build" (attempt 2 of 3): the runner exited without taking the job
+giving up on OWNER/REPO "build" after 3 attempts: the runner exited without taking the job
+cancelled OWNER/REPO "deploy": it is no longer queued upstream
 ```
 
 ### Status
@@ -97,15 +97,15 @@ cancelled daniel-gillis/homelab "deploy": it is no longer queued upstream
 ```console
 $ python3 controller/runletd.py status --state runlet-ledger.db --max 8
 RUNNING 2 of 8
-       6s  integration tests                          daniel-gillis/homelab   attempt 2
-    3m12s  build                                    daniel-gillis/homelab
+       6s  integration tests                          OWNER/REPO   attempt 2
+    3m12s  build                                    OWNER/REPO
 
 QUEUED 1
-      45s  deploy                                   daniel-gillis/homelab   runlet-runner
+      45s  deploy                                   OWNER/REPO   runlet-runner
 
 RECENT
-       0s ago  smoke                                daniel-gillis/homelab   ok, took 48s
-     9m ago  lint                                   daniel-gillis/homelab   ok, took 22s
+       0s ago  smoke                                OWNER/REPO   ok, took 48s
+     9m ago  lint                                   OWNER/REPO   ok, took 22s
 ```
 
 It reads the SQLite file directly, so it works whether or not the scheduler is running. A container that has disappeared but whose lease is still active shows `[container gone, will retry]`, which is the state that used to be invisible.
@@ -134,7 +134,7 @@ runlet_jobs{state="done"} 4
 runlet_queued_jobs 0
 runlet_runners{kind="job"} 1
 runlet_runners{kind="warm"} 0
-runlet_job_running_seconds{repo="daniel-gillis/homelab",job="smoke",runner="runlet-130317391252-1"} 12.0
+runlet_job_running_seconds{repo="OWNER/REPO",job="smoke",runner="runlet-130317391252-1"} 12.0
 runlet_runner_missing 0
 runlet_reconcile_total 3
 ```

@@ -18,7 +18,7 @@ the container takes the job, exits, and is removed by docker
 ```console
 $ export GITHUB_TOKEN=...            # repository scope is enough
 $ python3 controller/runletd.py \
-    --repo daniel-gillis/homelab \
+    --repo OWNER/REPO \
     --serve runlet-runner \
     --image ghcr.io/you/runlet-runner:0.1.0 \
     --max 8 \
@@ -93,7 +93,7 @@ Wants=network-online.target
 [Service]
 Environment=GITHUB_TOKEN_FILE=/etc/runletd/token
 ExecStart=/usr/bin/python3 /opt/runletd/controller/runletd.py \
-  --repo daniel-gillis/homelab --serve runlet-runner \
+  --repo OWNER/REPO --serve runlet-runner \
   --image ghcr.io/you/runlet-runner:0.1.0 --max 8
 Restart=always
 RestartSec=5

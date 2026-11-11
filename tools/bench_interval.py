@@ -123,9 +123,9 @@ def pct(values: list[float], q: float) -> float:
 
 def main(argv) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default="daniel-gillis/homelab")
+    ap.add_argument("--repo", required=True, help="owner/repo to measure")
     ap.add_argument("--workflow", default="bench-runner.yml")
-    ap.add_argument("--namespace", default="homelab")
+    ap.add_argument("--namespace", default="default")
     ap.add_argument("--runs", type=int, default=10)
     ap.add_argument("--json-out", default="")
     args = ap.parse_args(argv)

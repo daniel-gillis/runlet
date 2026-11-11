@@ -61,6 +61,7 @@ The patch touches two files in `actions/runner`. CI applies it to the pinned ups
 | --- | --- |
 | [Setup](docs/setup.md) | Build, mint a configuration, run, confirm the patch is active |
 | [Controller](docs/controller.md) | Scaling, warm pools, webhooks, per-label images |
+| [Kubernetes](docs/kubernetes.md) | Running the controller and runners in a cluster |
 | [Performance](docs/performance.md) | Every number and how it was produced |
 | [Design](docs/design.md) | Why this is a patch rather than a new agent |
 | [Troubleshooting](docs/troubleshooting.md) | Job stays queued, container exits, build fails |

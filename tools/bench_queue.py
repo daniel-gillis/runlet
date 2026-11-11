@@ -6,7 +6,7 @@
 
 The distinction matters because only the second one involves a runner at all.
 
-    python3 tools/bench_queue.py --repo daniel-gillis/homelab --runs 5
+    python3 tools/bench_queue.py --repo OWNER/REPO --runs 5
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def latest_run(repo: str, workflow: str) -> int:
 
 def main(argv) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default="daniel-gillis/homelab")
+    ap.add_argument("--repo", required=True, help="owner/repo to measure")
     ap.add_argument("--workflow", default="bench-local.yml")
     ap.add_argument("--runs", type=int, default=5)
     args = ap.parse_args(argv)

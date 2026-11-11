@@ -98,7 +98,7 @@ def prune_offline_runners(repo: str) -> int:
     return removed
 
 
-args_repo = "daniel-gillis/homelab"
+args_repo = ""
 
 
 def wait_online(repo: str, name: str, timeout: int = 45) -> None:
@@ -209,7 +209,7 @@ def main(argv) -> int:
     global args_repo
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", required=True)
-    ap.add_argument("--repo", default="daniel-gillis/homelab")
+    ap.add_argument("--repo", required=True, help="owner/repo to measure")
     ap.add_argument("--workflow", default="bench-local.yml")
     ap.add_argument("--label", default="runlet-local")
     ap.add_argument("--layout", default="/Users/lab/src/runner/_layout")
