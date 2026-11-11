@@ -26,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from ledger import Job, Ledger
+from kubernetes_runtime import KubernetesRuntime
 from metrics import MetricsServer, PassStats
 from scheduler import Policy, Scheduler
 
@@ -208,6 +209,10 @@ def main(argv) -> int:
     ap.add_argument("--grace", type=float, default=90.0,
                     help="seconds before a missing container counts as a failure")
     ap.add_argument("--interval", type=float, default=5.0)
+    ap.add_argument("--runtime", choices=["docker", "kubernetes"], default="docker",
+                    help="where runners run: local containers, or pods in this cluster")
+    ap.add_argument("--namespace", default="homelab", help="namespace for kubernetes runtime")
+    ap.add_argument("--service-account", default="", help="service account for runner pods")
     ap.add_argument("--network", default="")
     ap.add_argument("--webhook-port", type=int, default=0)
     ap.add_argument("--metrics-port", type=int, default=0,
@@ -236,10 +241,15 @@ def main(argv) -> int:
     def log(message: str) -> None:
         print(f"{time.strftime('%H:%M:%S')}  {message}", flush=True)
 
+    if args.runtime == "kubernetes":
+        runtime = KubernetesRuntime(args.namespace, args.image, args.service_account)
+    else:
+        runtime = DockerRuntime(token, profiles, args.image, args.network, args.dry_run)
+
     scheduler = Scheduler(
         ledger=ledger,
         source=GitHubSource(args.repo, token),
-        runtime=DockerRuntime(token, profiles, args.image, args.network, args.dry_run),
+        runtime=runtime,
         policy=policy,
         log=log,
     )
@@ -265,6 +275,10 @@ def main(argv) -> int:
         try:
             report = scheduler.reconcile()
             stats.record(time.time() - started)
+            if hasattr(runtime, "reap"):
+                reaped = runtime.reap()
+                if reaped:
+                    print(f"removed {reaped} finished pod(s)", flush=True)
             if report.changed():
                 print(f"observed={report.observed} granted={len(report.granted)} "
                       f"retried={len(report.retried)} completed={len(report.completed)} "
