@@ -118,6 +118,32 @@ With the patch, the interval is roughly 90 percent GitHub latency and 10 percent
 
 The next experiment worth running is instrumenting the 202 ms first-step stage, because it is the only remaining item where the cause is unknown rather than merely expensive.
 
+## Correcting the queue-time figure
+
+Earlier measurements reported "about three seconds of queue time" for a job to reach
+a runner. That number came from `gh run view`, which reports whole seconds, and it
+conflated two different intervals.
+
+Measured directly from the REST API at half-second resolution, five runs:
+
+| Run | Workflow setup | Assignment | Total |
+| --- | --- | --- | --- |
+| 1 | 2.0 s | 0.0 s | 2.0 s |
+| 2 | 2.0 s | 0.0 s | 2.0 s |
+| 3 | 2.0 s | 0.0 s | 2.0 s |
+| 4 | 1.0 s | 0.0 s | 1.0 s |
+| 5 | 1.0 s | 0.0 s | 1.0 s |
+
+- **Workflow setup**, from run creation to job creation: 1 to 2 seconds. GitHub
+  parses the workflow and creates the job records.
+- **Assignment**, from job creation to a runner starting it: 0.0 seconds. A runner
+  that is already polling takes the job immediately.
+
+So the queue is not a wait for a runner. It is the time GitHub spends preparing the
+run, and a waiting runner adds nothing measurable to it. Triggering workflows
+programmatically cannot shorten it, because the interval happens after the trigger
+and before any runner is involved.
+
 ## The log dequeue timer
 
 Console lines were uploaded on a fixed timer: 250 ms per batch for the first 240 batches, then 500 ms. A line queued just after a batch waits almost the full interval.

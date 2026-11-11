@@ -6,7 +6,7 @@ No. The patch changes when the runner starts work. Steps, logs, isolation and `r
 
 ## Why is the gain only 15 percent?
 
-Most of a job's startup belongs to GitHub. On one host, a job that runs a single command spends about three seconds queued before any runner hears about it, 700 ms fetching the job definition after that, 200 to 400 ms starting the agent's worker process, and the remainder in the steps themselves.
+Most of a job's startup belongs to GitHub. Measured at half-second resolution, a run takes 1 to 2 seconds for GitHub to create the job from the workflow, and a runner that is already polling picks it up in under a tenth of a second. After that, the job definition takes 700 to 840 ms to fetch, then roughly 470 ms of agent work before the first step runs.
 
 The patch removes the parts that were overhead: a lock renewal that blocked dispatch and an acknowledge that blocked the fetch. The rest is GitHub's latency.
 

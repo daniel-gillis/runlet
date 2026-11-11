@@ -72,7 +72,7 @@ The patch touches two files in `actions/runner`. CI applies it to the pinned ups
 
 ## Limitations
 
-- About three seconds pass at GitHub before a runner is told about a queued job. Nothing here changes that.
+- GitHub takes 1 to 2 seconds to turn a trigger into a queued job. A waiting runner picks it up immediately; nothing here changes that interval.
 - Roughly 700 ms of job-fetch latency stays on the critical path. The patch overlaps what it can.
 - A JIT runner serves one job. Reusing a runner would need token registration and would carry state between jobs.
 - Linux only, amd64 and arm64.
