@@ -249,7 +249,11 @@ mod tests {
         assert!(config.runner.use_v2_flow);
         assert_eq!(config.credentials.scheme, "OAuth");
         assert_eq!(config.credentials.data.client_id, "client-abc");
-        assert!(config.credentials.data.authorization_url.ends_with("/token"));
+        assert!(config
+            .credentials
+            .data
+            .authorization_url
+            .ends_with("/token"));
         assert_eq!(config.rsa.exponent, "AQAB");
     }
 
@@ -288,7 +292,10 @@ mod tests {
 
     #[test]
     fn endpoint_prefers_v2_when_enabled() {
-        assert_eq!(decode(&sample()).unwrap().endpoint(), "https://broker.example/xyz");
+        assert_eq!(
+            decode(&sample()).unwrap().endpoint(),
+            "https://broker.example/xyz"
+        );
     }
 
     #[test]
@@ -306,7 +313,10 @@ mod tests {
     fn credential_never_appears_in_debug_output() {
         let config = decode(&sample()).unwrap();
         let rendered = format!("{:?}", config.credentials);
-        assert!(!rendered.contains("client-abc"), "client id leaked: {rendered}");
+        assert!(
+            !rendered.contains("client-abc"),
+            "client id leaked: {rendered}"
+        );
         assert!(rendered.contains("<redacted>"));
     }
 
@@ -322,7 +332,10 @@ mod tests {
 
     #[test]
     fn rejects_garbage() {
-        assert!(matches!(decode("!!! not base64"), Err(JitError::NotBase64(..))));
+        assert!(matches!(
+            decode("!!! not base64"),
+            Err(JitError::NotBase64(..))
+        ));
         let raw = base64::engine::general_purpose::STANDARD.encode("not json");
         assert!(matches!(decode(&raw), Err(JitError::NotJson(..))));
     }
