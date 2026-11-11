@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
       - name: Unit tests
         working-directory: controller
-        run: python -m unittest -v test_runletd
+        run: python -m unittest discover -s . -p "test_*.py" -v
       - name: Byte-compile (catches syntax errors in code paths tests miss)
         run: python -m py_compile controller/runletd.py tools/*.py
 

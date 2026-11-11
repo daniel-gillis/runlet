@@ -5,3 +5,8 @@ agent/target/
 # local measurement output
 /perf-*/
 *.log
+
+# controller ledger
+*.db
+*.db-wal
+*.db-shm

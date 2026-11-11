@@ -42,6 +42,6 @@ One job per container. A JIT runner is single-use because the server marks it `E
 - No queue-latency signal is available from the API, so capacity cannot grow before work appears.
 - Jobs run in a container with the toolchain the image provides. Toolchain diversity is handled by label-to-image mapping, not by a single universal image.
 
-## Proposal
+## Reconciliation
 
-[docs/proposals/scheduler.md](proposals/scheduler.md) describes a lease-based scheduler with level-triggered reconciliation. It is not implemented and is kept for anyone who needs guaranteed delivery rather than best-effort polling.
+The controller keeps a ledger of jobs and leases and reconciles it against the runtime on every pass, so a restart resumes and a failed container is retried rather than forgotten. [scheduler.md](scheduler.md) documents the rules.

@@ -43,9 +43,9 @@ A JIT configuration's label list replaces the defaults. A runner minted with `["
 
 A job with no labels is never served, because a runner started for it could not match.
 
-## Capacity is derived, not stored
+## State and retries
 
-The controller keeps no desired-state record. It counts running containers by name prefix and starts the difference. Restart it and the next pass rebuilds the same view. A job that finishes frees its capacity when the container exits, which `--rm` guarantees.
+The controller records jobs and leases in a SQLite ledger, so a restart resumes from the queue. A container that disappears is retried with a higher fencing token, up to `--max-attempts`. [scheduler.md](scheduler.md) describes the ledger, the reconciliation rules and the tests.
 
 A failed mint or a failed `docker run` is logged and the pass continues, so one bad job does not stop the rest.
 
